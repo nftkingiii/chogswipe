@@ -1,6 +1,6 @@
 # Traits to gadgets
 
-Every Chog's loadout comes from its own metadata. Traits pick *which* gadgets it has; Tier sets *how strong* they are. The mapping lives in [`scripts/gadgets.py`](../scripts/gadgets.py) and runs over a snapshot of the collection metadata in [`data/chog-metadata.json`](../data/chog-metadata.json) (1,946 of 1,969 files, fetched 2026-10-08).
+Every Chog's loadout comes from its own metadata. Traits pick *which* gadgets it has; Tier sets *how strong* they are. The mapping lives in [`scripts/gadgets.py`](../scripts/gadgets.py) and runs over a snapshot of the collection metadata in [`data/chog-metadata.json`](../data/chog-metadata.json) (all 1,969 files, fetched 2026-10-08).
 
 Counts below are Chogs in that snapshot.
 
