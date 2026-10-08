@@ -12,3 +12,10 @@ HACK_EVENT_GATE.json
 SOURCES.md
 notes/
 *.ics
+
+# foundry
+contracts/lib/
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/31337/
+contracts/broadcast/**/dry-run/
