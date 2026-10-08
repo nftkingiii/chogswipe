@@ -11,3 +11,4 @@ Status: in development for Chogathon 2026.
 - Network: Monad mainnet
 - Chog Genesis NFT: `0xc96d31f8626c6d03fae5dcd3d61e3fb9f4a73763`
 - $CHOG: `0x350035555E10d9AfAF1566AaebfCeD5BA6C27777`
+- HideoutVault: [`0xe9e4408410a18211f9b1EC754974675DDD6DD30e`](https://monadvision.com/address/0xe9e4408410a18211f9b1EC754974675DDD6DD30e) (source verified, exact match)
