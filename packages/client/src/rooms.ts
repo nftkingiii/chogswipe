@@ -34,6 +34,7 @@ import {
 export interface Theme {
   walls: string[]; // one tint per room
   accent: string;
+  names?: readonly string[]; // room signs
 }
 
 export const DEFAULT_THEME: Theme = {
@@ -82,7 +83,7 @@ function bakeRoom(scene: Phaser.Scene, room: number, theme: Theme) {
     if (col > 0) partition(rc, ctx, seed + 80, 0, false, room === LOCKED_DOOR.right);
     if (col < COLS - 1) partition(rc, ctx, seed + 90, W - 60, true, room === LOCKED_DOOR.left);
 
-    sign(ctx, rc, seed + 95, ROOM_NAMES[room]!, room === 5 ? 520 : 470);
+    sign(ctx, rc, seed + 95, (theme.names ?? ROOM_NAMES)[room]!, room === 5 ? 520 : 470);
     if (room === 5) {
       // the vault room is dim: harder to spot traps without scouting
       ctx.fillStyle = "rgba(20,14,30,0.28)";
@@ -203,6 +204,7 @@ export function bakeSkyline(scene: Phaser.Scene, w: number, h: number) {
     ctx.shadowBlur = 0;
   };
   draw(c.getContext("2d")!, rough.canvas(c), 4242);
+  if (scene.textures.exists("skyline")) return;
   scene.textures.addCanvas("skyline", c);
 }
 

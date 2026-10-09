@@ -72,12 +72,13 @@ function shiftHue(hex: string, deg: number): string {
   return toHex([f(0) * 255, f(8) * 255, f(4) * 255]);
 }
 
-export function themeFor(background: string | undefined): Theme {
+export function themeFor(background: string | undefined, names?: readonly string[]): Theme {
   const base = BG_HEX[background ?? ""] ?? "#c9d3b8";
   const hues = [0, 14, -14, 24, -24, 0];
   const paper = [0.55, 0.62, 0.5, 0.58, 0.52, 0.7];
   return {
     walls: hues.map((h, i) => mix(shiftHue(base, h), paper[i]!)),
     accent: base,
+    names,
   };
 }

@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import { LoadoutScene } from "./loadoutScene.js";
+import { MapScene } from "./mapScene.js";
 import { RaidScene } from "./raidScene.js";
 
 async function start() {
@@ -11,7 +13,8 @@ async function start() {
     height: 720,
     backgroundColor: "#1c1618",
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-    scene: [RaidScene],
+    // ?autopilot jumps straight into a demo raid; otherwise start at the loadout screen
+    scene: new URLSearchParams(location.search).has("autopilot") ? [RaidScene, LoadoutScene, MapScene] : [LoadoutScene, MapScene, RaidScene],
   });
   (window as unknown as { game: Phaser.Game }).game = game;
 }

@@ -25,7 +25,9 @@ import {
   type Route,
 } from "@chogswipe/sim";
 import { ACCENT, BOIL_FRAMES, FLOOR_Y, INK, PAPER, ROOM_PX, SKIN, TRAP_H, VIEW_H, bakeSack, bakeTraps, bakeVault } from "./art.js";
-import { DEMO_RAIDER, DEMO_TARGET, demoSetup } from "./demo.js";
+import { DEMO_ROSTER, IMAGE_BASE, type RosterChog } from "./roster.js";
+import { LOCATIONS, loadoutFor, type Location } from "@chogswipe/sim";
+import { markCleared } from "./progress.js";
 import { bakeFx } from "./puppet.js";
 import { ChogSprite, makeChogTexture } from "./chogSprite.js";
 import { WINDOWS, bakeForeground, bakeRooms, bakeSkyline } from "./rooms.js";
@@ -79,27 +81,51 @@ export class RaidScene extends Phaser.Scene {
   };
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
 
+  private chog: RosterChog = DEMO_ROSTER[0]!;
+  private loc: Location = LOCATIONS[0]!;
+  private cap = 2_000;
+
   constructor() {
     super("raid");
   }
 
+  init(data: { chog?: RosterChog; location?: Location }) {
+    this.chog = data.chog ?? DEMO_ROSTER[0]!;
+    this.loc = data.location ?? LOCATIONS[0]!;
+    this.cap = 2_000 + LOCATIONS.indexOf(this.loc) * 1_000; // demo vault sizes until the house vaults are funded
+    // reset per-run state when the scene is restarted
+    this.acc = this.hitStop = this.seenEvents = this.boilT = this.boilFrame = 0;
+    this.boilers = [];
+    this.trapSprites = [];
+    this.hunchSprites = [];
+    this.skyPatches = [];
+    this.roomImages = [];
+    this.visited = new Set([0]);
+    this.bot = makeBot({ route: ROUTE, scout: true });
+  }
+
   preload() {
     this.load.image("chog-sheet", "/sprites/chog.png");
-    this.load.image("chog1-portrait", "/chogs/1-portrait.png");
+    this.load.setCORS("anonymous");
+    this.load.image(`portrait:${this.chog.id}`, IMAGE_BASE + this.chog.image);
   }
 
   create() {
-    this.setup = demoSetup();
+    this.setup = {
+      seed: (Date.now() & 0xffff) ^ this.chog.id,
+      raider: loadoutFor(this.chog.traits),
+      hideout: { defender: loadoutFor(this.loc.traits), traps: this.loc.traps },
+    };
     this.s = createRaid(this.setup);
 
-    bakeRooms(this, themeFor(DEMO_TARGET.traits.Background));
+    bakeRooms(this, themeFor(this.loc.traits.Background, this.loc.rooms));
     bakeSkyline(this, 1800, 880);
     bakeForeground(this);
     bakeVault(this);
     bakeTraps(this);
     bakeSack(this);
     bakeFx(this);
-    makeChogTexture(this, DEMO_RAIDER.traits.Skin, "chog-raider");
+    makeChogTexture(this, this.chog.traits.Skin, "chog-raider");
 
     this.cameras.main.setBounds(0, 0, COLS * ROOM_PX, FLOORS * VIEW_H);
     this.cameras.main.setBackgroundColor(INK);
@@ -136,7 +162,7 @@ export class RaidScene extends Phaser.Scene {
     this.boil(this.add.image(worldX(3, 940), floorY(3) + 40, "fgplant_0").setOrigin(0.5, 1).setDepth(5).setAlpha(0.95).setFlipX(true), "fgplant");
     this.motes();
 
-    this.puppet = new ChogSprite(this, "chog-raider", floorY(0));
+    this.puppet = new ChogSprite(this, "chog-raider", floorY(0), this.chog.traits);
     this.cameras.main.startFollow(this.puppet.root, true, 0.12, 0.12, 0, 140);
     this.buildHud();
 
@@ -157,9 +183,9 @@ export class RaidScene extends Phaser.Scene {
     const fixed = <T extends Phaser.GameObjects.Components.ScrollFactor & Phaser.GameObjects.Components.Depth>(o: T) => o.setScrollFactor(0).setDepth(100);
 
     fixed(this.add.graphics()).fillStyle(0x1c1618, 0.88).fillRoundedRect(16, 14, W - 32, 74, 18);
-    fixed(this.add.text(36, 26, DEMO_TARGET.name.toUpperCase(), { fontFamily: FONT_TITLE, fontSize: "26px", color: PAPER }));
+    fixed(this.add.text(36, 26, this.loc.name.toUpperCase(), { fontFamily: FONT_TITLE, fontSize: "26px", color: PAPER }));
     fixed(
-      this.add.text(36, 58, `Uncommon hideout · ${this.setup.hideout.traps.length} traps hidden · 2 floors`, {
+      this.add.text(36, 58, `${this.setup.hideout.defender.tier} hideout · ${this.setup.hideout.traps.length} traps hidden · 2 floors`, {
         fontFamily: FONT_BODY,
         fontSize: "20px",
         color: "#c9bfae",
@@ -183,9 +209,9 @@ export class RaidScene extends Phaser.Scene {
 
     // bottom-left: who you are and your gadgets
     fixed(this.add.graphics()).fillStyle(0x1c1618, 0.9).fillRoundedRect(16, H - 112, 560, 96, 18);
-    fixed(this.add.image(64, H - 64, "chog1-portrait").setDisplaySize(76, 76));
+    fixed(this.add.image(64, H - 64, `portrait:${this.chog.id}`).setDisplaySize(76, 76));
     fixed(this.add.graphics()).lineStyle(4, 0xf3eadb, 1).strokeRoundedRect(25, H - 103, 78, 78, 12);
-    fixed(this.add.text(118, H - 104, DEMO_RAIDER.name, { fontFamily: FONT_TITLE, fontSize: "22px", color: PAPER }));
+    fixed(this.add.text(118, H - 104, `Chog #${this.chog.id}`, { fontFamily: FONT_TITLE, fontSize: "22px", color: PAPER }));
     const l = this.setup.raider;
     fixed(this.add.text(118, H - 76, `${l.tier} · ${l.body ?? "—"} · ${l.head ?? "—"}`, { fontFamily: FONT_BODY, fontSize: "18px", color: "#c9bfae" }));
     const chip = (x: number) =>
@@ -341,7 +367,7 @@ export class RaidScene extends Phaser.Scene {
       case "grab":
         this.hitStop = 140;
         cam.shake(240, 0.01);
-        this.toast(`SWIPED ${DEMO_TARGET.capChog.toLocaleString()} $CHOG`, "#f0c35a");
+        this.toast(`SWIPED ${this.cap.toLocaleString()} $CHOG`, "#f0c35a");
         this.burst(this.puppet.root.x, this.puppet.root.y - 140, 0xf0c35a, 26);
         break;
       case "drop":
@@ -355,6 +381,7 @@ export class RaidScene extends Phaser.Scene {
         break;
       case "end":
         this.toast(e.result === "escaped" ? "ESCAPED!" : e.result === "knocked-out" ? "KNOCKED OUT" : "TIME'S UP", e.result === "escaped" ? "#f0c35a" : ACCENT, 1200);
+        if (e.result === "escaped") markCleared(this.loc.slug);
         this.time.delayedCall(700, () => this.resultCard(e.result));
         break;
     }
@@ -364,7 +391,7 @@ export class RaidScene extends Phaser.Scene {
     const W = this.scale.width;
     const H = this.scale.height;
     const won = result === "escaped";
-    const loot = Math.floor((DEMO_TARGET.capChog * this.s.lootBps) / 10_000);
+    const loot = Math.floor((this.cap * this.s.lootBps) / 10_000);
     const c = this.add.container(W / 2, H / 2 + 20).setScrollFactor(0).setAlpha(0).setScale(0.9);
     const shade = this.add.rectangle(0, -20, W, H, 0x1c1618, 0.55);
     const card = this.add.graphics();
@@ -379,14 +406,15 @@ export class RaidScene extends Phaser.Scene {
     const stats = this.add.text(
       -90,
       -14,
-      `${secs}s run · ${traps} trap${traps === 1 ? "" : "s"} hit · ${s.hp} hearts left\n${this.visited.size} of ${ROOMS} rooms · from ${DEMO_TARGET.name}`,
+      `${secs}s run · ${traps} trap${traps === 1 ? "" : "s"} hit · ${s.hp} hearts left\n${this.visited.size} of ${ROOMS} rooms · from ${this.loc.name}`,
       { fontFamily: FONT_BODY, fontSize: "22px", color: "#5a4d50", lineSpacing: 4 },
     );
     const btn = this.add.graphics();
     btn.fillStyle(0xe0528a, 1).fillRoundedRect(-90, 74, 330, 58, 16);
     btn.lineStyle(4, 0x1c1618, 1).strokeRoundedRect(-90, 74, 330, 58, 16);
-    const cta = this.add.text(75, 103, won ? "Settle on Monad" : "Try again", { fontFamily: FONT_TITLE, fontSize: "26px", color: PAPER }).setOrigin(0.5);
-    const note = this.add.text(-270, 128, "demo", { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70" });
+    const cta = this.add.text(75, 103, "Back to the heists", { fontFamily: FONT_TITLE, fontSize: "26px", color: PAPER }).setOrigin(0.5);
+    btn.setInteractive(new Phaser.Geom.Rectangle(-90, 74, 330, 58), Phaser.Geom.Rectangle.Contains).on("pointerdown", () => this.scene.start("map", { chog: this.chog }));
+    const note = this.add.text(-270, 128, won ? `stole ${this.loc.loot} · demo vault` : "demo vault", { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70" });
     c.add([shade, card, head, title, amount, stats, btn, cta, note]);
     this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 320, ease: "Back.Out" });
   }
@@ -466,8 +494,8 @@ export class RaidScene extends Phaser.Scene {
     this.hud.timer.setText(`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`);
     this.hud.timer.setColor(s.timeLeft < RAID_TICKS / 4 ? ACCENT : PAPER);
     this.hud.hearts.setText("♥".repeat(Math.max(0, s.hp)) + "♡".repeat(Math.max(0, 3 - s.hp)));
-    const carried = Math.floor((DEMO_TARGET.capChog * s.lootBps) / 10_000);
-    this.hud.loot.setText(`${carried.toLocaleString()} / ${DEMO_TARGET.capChog.toLocaleString()} $CHOG`);
+    const carried = Math.floor((this.cap * s.lootBps) / 10_000);
+    this.hud.loot.setText(`${carried.toLocaleString()} / ${this.cap.toLocaleString()} $CHOG`);
     const W = this.scale.width;
     const H = this.scale.height;
     this.hud.lootBar
@@ -478,7 +506,7 @@ export class RaidScene extends Phaser.Scene {
       .fillRoundedRect(W - 260, 62, Math.max(12, 220 * (s.lootBps / 10_000)), 12, 6);
     this.hud.scout.setText(`Q · ${this.setup.raider.scout} ×${s.scoutCharges}`);
     this.hud.special.setText(`E · ${this.setup.raider.special ?? "none"}${s.specialUsed ? " (used)" : ""}`);
-    this.hud.room.setText(s.climb ? (s.climb.kind === "vent" ? "In the vent…" : "On the stairs…") : ROOM_NAMES[s.room]!.toUpperCase());
+    this.hud.room.setText(s.climb ? (s.climb.kind === "vent" ? "In the vent…" : "On the stairs…") : this.loc.rooms[s.room]!.toUpperCase());
 
     // floor plan: visited rooms, where you are, the vault
     const m = this.hud.map.clear();

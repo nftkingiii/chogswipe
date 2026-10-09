@@ -36,6 +36,7 @@ export function bake(scene: Phaser.Scene, key: string, w: number, h: number, fn:
     const c = canvas(w, h);
     const ctx = c.getContext("2d", { willReadFrequently: true })!;
     fn(ctx, rough.canvas(c), 1000 + f * 7919 + hash(key));
+    if (scene.textures.exists(`${key}_${f}`)) scene.textures.remove(`${key}_${f}`); // re-baked per heist
     scene.textures.addCanvas(`${key}_${f}`, c);
   }
 }

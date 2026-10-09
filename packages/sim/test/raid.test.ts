@@ -317,3 +317,16 @@ describe("hideout validation", () => {
     expect(errors.some((e) => e.includes("too close"))).toBe(true);
   });
 });
+
+describe("lore locations", () => {
+  it("every preset heist has a valid layout and can be beaten", async () => {
+    const { LOCATIONS } = await import("../src/index.js");
+    for (const loc of LOCATIONS) {
+      const defender = loadoutFor(loc.traits);
+      expect(validateHideout({ defender, traps: loc.traps }), loc.slug).toEqual([]);
+      const su = setup(loc.traps, loadoutFor({ Tier: "Legendary", Head: "Spartan Helmet", Body: "Golden Armor" }), defender);
+      const out = run(su, { route: "kitchen", seeTraps: true });
+      expect(out.result, loc.slug).toBe("escaped");
+    }
+  });
+});

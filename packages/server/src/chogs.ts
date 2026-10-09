@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { loadoutFor, type Loadout, type TrapPlacement, type Traits } from "@chogswipe/sim";
+import { HOUSE_BASE, LOCATIONS, loadoutFor, type Loadout, type TrapPlacement, type Traits } from "@chogswipe/sim";
 
 export const MAX_CHOG_ID = 1969;
-export const HOUSE_BASE = 1_000_000;
+export { HOUSE_BASE };
 
 const data = (name: string) =>
   JSON.parse(readFileSync(new URL(`../../../data/${name}`, import.meta.url), "utf8"));
@@ -19,19 +19,10 @@ export interface ChogInfo {
   house: boolean;
 }
 
-/** House hideouts: treasury-funded vaults so there is always something to raid. */
-const HOUSES: Record<number, { name: string; traits: Traits; traps: TrapPlacement[] }> = {
-  [HOUSE_BASE]: {
-    name: "The Fwog Pond",
-    traits: { Tier: "Uncommon", Mouth: "Bubblegum", Eyes: "Happy", Aura: "Mint", Background: "Aqua Mint" },
-    traps: [
-      { room: 0, x: 420, kind: "Tripwire" },
-      { room: 1, x: 760, kind: "Gum Snare" },
-      { room: 4, x: 640, kind: "Tripwire" },
-      { room: 5, x: 520, kind: "Gum Snare" },
-    ],
-  },
-};
+/** House hideouts are the lore locations: treasury-funded vaults so there is always something to raid. */
+const HOUSES: Record<number, { name: string; traits: Traits; traps: TrapPlacement[] }> = Object.fromEntries(
+  LOCATIONS.map((l) => [l.id, { name: l.name, traits: l.traits, traps: l.traps }]),
+);
 
 export function isHouse(id: number): boolean {
   return id >= HOUSE_BASE;

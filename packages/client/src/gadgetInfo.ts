@@ -1,0 +1,52 @@
+// One-line descriptions shown when a trait turns into a gadget.
+export const GADGET_INFO: Record<string, string> = {
+  // traps (Mouth)
+  Tripwire: "Stuns and costs a heart",
+  "Crybaby Alarm": "Wails and cuts the raid clock",
+  "Spring Plate": "Bounces raiders back",
+  "Slick Floor": "Raiders slip and drop loot",
+  "Bait Coin": "Fake loot that bites",
+  "Gum Snare": "Sticks raiders in place",
+  Chomper: "Bear-trap bite, two hearts",
+  "Jack-in-the-Box": "Scrambles the controls",
+  // scouting (Eyes)
+  Hunch: "Buzzes near hidden traps",
+  "X-Ray": "Reveals every trap in the room",
+  "Wild Glance": "Reveals one random trap",
+  "Laser Eyes": "Zaps a trap from range",
+  "Tear Sense": "Spots the next trap ahead",
+  Peek: "Sees the whole layout, once",
+  // perks (Head)
+  "Brim Shade": "Immune to Jack-in-the-Box",
+  Hex: "Your vault curses thieves",
+  "Dash Band": "A little faster",
+  Guard: "Blocks the first trap",
+  "Rage Horns": "Smashes locked doors",
+  "Prank Card": "Leaves a calling card",
+  Lockpick: "Picks doors and vaults fast",
+  "Vent Crawl": "Uses the vents",
+  // movement (Body)
+  Sprint: "Runs faster",
+  Disguise: "The guard ignores you",
+  Blink: "Short teleport",
+  "Escape Artist": "Shakes off stuns twice as fast",
+  Streaker: "Fastest of all",
+  "Armor Plate": "One extra heart",
+  "Costume Immunity": "Never slips on Slick Floor",
+  // specials (Accessory)
+  "Pet Scout": "Pet trips the next trap for you",
+  "Stink Bomb": "Knocks out the guard",
+  "Smoke Bomb": "Silences alarms",
+  "Decoy Coin": "Distracts the guard",
+  Pump: "Speed burst",
+  "Second Life": "Survive one knockout",
+  Dump: "Slows raiders in your hideout",
+  "Cut Wire": "Disarms a trap up close",
+  // auras
+  Ward: "Longer shield after a raid",
+  Luck: "Drop less loot when you slip",
+  Chill: "Raiders move slower here",
+  Burn: "Thieves lose a cut on exit",
+  Fog: "Your traps resist scouting",
+  Zap: "Stuns the first raider at the door",
+};
