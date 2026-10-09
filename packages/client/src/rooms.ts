@@ -8,6 +8,7 @@ import {
   colOf,
   type Link,
 } from "@chogswipe/sim";
+import rough from "roughjs";
 import {
   ACCENT,
   FLOOR_Y,
@@ -70,6 +71,8 @@ function bakeRoom(scene: Phaser.Scene, room: number, theme: Theme) {
     ctx.fillStyle = "rgba(28,22,24,0.12)";
     ctx.fillRect(0, FLOOR_Y - 18, W, 18);
 
+    const win = WINDOWS[room];
+    if (win) window_(ctx, rc, seed + 400, win);
     props(ctx, rc, seed, room, theme);
     for (const l of LINKS) drawLink(ctx, rc, seed, room, l);
 
@@ -123,6 +126,102 @@ function props(ctx: CanvasRenderingContext2D, rc: RC, seed: number, room: number
       lamp(rc, ctx, seed, 600);
       break;
   }
+}
+
+// ------------------------------------------------------------- windows
+
+/** Window panes per room (x, y, w, h). Panes are cut out so the night city behind shows through. */
+export const WINDOWS: Record<number, [number, number, number, number] | undefined> = {
+  0: [330, 150, 190, 150],
+  1: [380, 140, 180, 170],
+  2: [250, 140, 220, 140],
+  3: [660, 140, 190, 170],
+  4: [220, 140, 180, 140],
+};
+
+function window_(ctx: CanvasRenderingContext2D, rc: RC, seed: number, [x, y, w, h]: [number, number, number, number]) {
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = "#000"; // fully opaque, so the pane is fully erased
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+  rc.rectangle(x - 10, y - 10, w + 20, h + 20, ink(seed, { strokeWidth: 5 }));
+  rc.rectangle(x - 4, y - 4, w + 8, h + 8, ink(seed + 1, { stroke: "#8a5a3c", strokeWidth: 8, roughness: 1 }));
+  rc.line(x + w / 2, y, x + w / 2, y + h, ink(seed + 2, { stroke: "#8a5a3c", strokeWidth: 7, roughness: 1 }));
+  rc.line(x, y + h / 2, x + w, y + h / 2, ink(seed + 3, { stroke: "#8a5a3c", strokeWidth: 7, roughness: 1 }));
+  rc.rectangle(x - 20, y + h + 6, w + 40, 16, ink(seed + 4, { fill: "#8a5a3c", fillStyle: "solid", strokeWidth: 3 }));
+  // curtains
+  rc.path(`M ${x - 26} ${y - 16} C ${x - 6} ${y + h * 0.4}, ${x - 30} ${y + h * 0.8}, ${x - 10} ${y + h + 4} L ${x - 40} ${y + h + 4} L ${x - 40} ${y - 16} Z`, ink(seed + 5, { fill: "#c96a5a", fillStyle: "solid", strokeWidth: 3 }));
+  rc.path(`M ${x + w + 26} ${y - 16} C ${x + w + 6} ${y + h * 0.4}, ${x + w + 30} ${y + h * 0.8}, ${x + w + 10} ${y + h + 4} L ${x + w + 40} ${y + h + 4} L ${x + w + 40} ${y - 16} Z`, ink(seed + 6, { fill: "#c96a5a", fillStyle: "solid", strokeWidth: 3 }));
+}
+
+/** Night city seen through the windows; drawn once and scrolled slower than the rooms. */
+export function bakeSkyline(scene: Phaser.Scene, w: number, h: number) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const draw = (ctx: CanvasRenderingContext2D, rc: RC, s: number) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#1d1438");
+    g.addColorStop(0.6, "#3a2766");
+    g.addColorStop(1, "#6b3f7a");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    // stars and a moon
+    let r = 99;
+    const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) % 10_000) / 10_000;
+    ctx.fillStyle = "#fff6d8";
+    for (let i = 0; i < 160; i++) ctx.fillRect(rand() * w, rand() * h * 0.6, 2, 2);
+    rc.circle(w * 0.3, h * 0.16, 90, ink(s, { fill: "#fff1c4", fillStyle: "solid", strokeWidth: 3 }));
+    // two rows of buildings with lit windows
+    for (const [row, base, color] of [
+      [0, h * 0.62, "#2a1e40"],
+      [1, h * 0.8, "#1c1530"],
+    ] as const) {
+      let x = -20;
+      while (x < w) {
+        const bw = 80 + rand() * 140;
+        const bh = 140 + rand() * 260 + row * 40;
+        rc.rectangle(x, base - bh, bw, bh + h, ink(s + Math.floor(x), { fill: color, fillStyle: "solid", strokeWidth: 3, stroke: "#120c1e" }));
+        for (let wy = base - bh + 20; wy < base + 200; wy += 34) {
+          for (let wx = x + 14; wx < x + bw - 20; wx += 28) {
+            if (rand() < 0.35) {
+              ctx.fillStyle = rand() < 0.2 ? "#b28cff" : "#f6d27a";
+              ctx.fillRect(wx, wy, 12, 16);
+            }
+          }
+        }
+        x += bw + 10 + rand() * 30;
+      }
+    }
+    // a Monad-purple neon sign on a rooftop
+    ctx.font = "54px 'Luckiest Guy'";
+    ctx.shadowColor = "#a07cff";
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = "#c9b2ff";
+    ctx.fillText("CHOG WORLD ORDER", w * 0.48, h * 0.42);
+    ctx.shadowBlur = 0;
+  };
+  draw(c.getContext("2d")!, rough.canvas(c), 4242);
+  scene.textures.addCanvas("skyline", c);
+}
+
+/** Foreground plant that the Chog walks behind, for depth. */
+export function bakeForeground(scene: Phaser.Scene) {
+  bake(scene, "fgplant", 220, 300, (_ctx, rc, s) => {
+    rc.polygon(
+      [
+        [70, 210],
+        [150, 210],
+        [140, 300],
+        [80, 300],
+      ],
+      ink(s, { fill: "#3b2a24", fillStyle: "solid" }),
+    );
+    for (let i = -3; i <= 3; i++) {
+      rc.ellipse(110 + i * 26, 130 - Math.abs(i) * -14, 40, 170, ink(s + 10 + i, { fill: "#2f4a2a", fillStyle: "solid", strokeWidth: 3 }));
+    }
+  });
 }
 
 // ------------------------------------------------------------- structure

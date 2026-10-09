@@ -19,7 +19,7 @@ export const DEMO_RAIDER = {
 
 export const DEMO_TARGET = {
   name: "The Fwog Pond",
-  traits: { Tier: "Uncommon", Mouth: "Bubblegum", Eyes: "Happy", Aura: "Mint" },
+  traits: { Tier: "Uncommon", Mouth: "Bubblegum", Eyes: "Happy", Aura: "Mint", Background: "Aqua Mint" },
   capChog: 2_000,
 };
 

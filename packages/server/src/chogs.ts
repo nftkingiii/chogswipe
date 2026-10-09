@@ -23,7 +23,7 @@ export interface ChogInfo {
 const HOUSES: Record<number, { name: string; traits: Traits; traps: TrapPlacement[] }> = {
   [HOUSE_BASE]: {
     name: "The Fwog Pond",
-    traits: { Tier: "Uncommon", Mouth: "Bubblegum", Eyes: "Happy", Aura: "Mint" },
+    traits: { Tier: "Uncommon", Mouth: "Bubblegum", Eyes: "Happy", Aura: "Mint", Background: "Aqua Mint" },
     traps: [
       { room: 0, x: 420, kind: "Tripwire" },
       { room: 1, x: 760, kind: "Gum Snare" },

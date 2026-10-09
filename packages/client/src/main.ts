@@ -5,7 +5,7 @@ async function start() {
   // Hand-drawn fonts are used inside canvas textures, so wait for them first.
   await Promise.all([document.fonts.load("32px 'Luckiest Guy'"), document.fonts.load("20px 'Patrick Hand'")]).catch(() => {});
   const game = new Phaser.Game({
-    type: Phaser.AUTO,
+    type: new URLSearchParams(location.search).has("canvas") ? Phaser.CANVAS : Phaser.AUTO,
     parent: "game",
     width: 1280,
     height: 720,

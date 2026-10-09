@@ -25,10 +25,11 @@ import {
   type Route,
 } from "@chogswipe/sim";
 import { ACCENT, BOIL_FRAMES, FLOOR_Y, INK, PAPER, ROOM_PX, SKIN, TRAP_H, VIEW_H, bakeSack, bakeTraps, bakeVault } from "./art.js";
-import { makeStickerHead } from "./head.js";
 import { DEMO_RAIDER, DEMO_TARGET, demoSetup } from "./demo.js";
-import { Puppet, bakeBody, bakeFx, sampleOutfit } from "./puppet.js";
-import { bakeRooms } from "./rooms.js";
+import { bakeFx } from "./puppet.js";
+import { ChogSprite, makeChogTexture } from "./chogSprite.js";
+import { WINDOWS, bakeForeground, bakeRooms, bakeSkyline } from "./rooms.js";
+import { themeFor } from "./theme.js";
 
 const TICK_MS = 1000 / TICK_HZ;
 const BOIL_MS = 180;
@@ -55,8 +56,10 @@ export class RaidScene extends Phaser.Scene {
   private boilFrame = 0;
   private boilers: { img: Phaser.GameObjects.Image; key: string }[] = [];
   private visited = new Set<number>([0]);
+  private skyPatches: { img: Phaser.GameObjects.Image; w: number; h: number }[] = [];
+  private roomImages: Phaser.GameObjects.Image[] = [];
 
-  private puppet!: Puppet;
+  private puppet!: ChogSprite;
   private trapSprites: Phaser.GameObjects.Image[] = [];
   private hunchSprites: Phaser.GameObjects.Image[] = [];
   private guard!: Phaser.GameObjects.Image;
@@ -81,7 +84,7 @@ export class RaidScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("chog1-cut", "/chogs/1.png");
+    this.load.image("chog-sheet", "/sprites/chog.png");
     this.load.image("chog1-portrait", "/chogs/1-portrait.png");
   }
 
@@ -89,21 +92,29 @@ export class RaidScene extends Phaser.Scene {
     this.setup = demoSetup();
     this.s = createRaid(this.setup);
 
-    bakeRooms(this);
+    bakeRooms(this, themeFor(DEMO_TARGET.traits.Background));
+    bakeSkyline(this, 1800, 880);
+    bakeForeground(this);
     bakeVault(this);
     bakeTraps(this);
     bakeSack(this);
     bakeFx(this);
-    makeStickerHead(this, "chog1-cut", "chog1-head");
-    const portrait = this.textures.get("chog1-portrait").getSourceImage() as HTMLImageElement;
-    bakeBody(this, "body", sampleOutfit(portrait, "#f0d36a", SKIN[DEMO_RAIDER.traits.Skin]));
+    makeChogTexture(this, DEMO_RAIDER.traits.Skin, "chog-raider");
 
     this.cameras.main.setBounds(0, 0, COLS * ROOM_PX, FLOORS * VIEW_H);
     this.cameras.main.setBackgroundColor(INK);
 
+    // night city patches behind each window; their crop shifts with the camera for depth
+    for (const [room, win] of Object.entries(WINDOWS)) {
+      if (!win) continue;
+      const r = Number(room);
+      const [wx, wy, ww, wh] = win;
+      const img = this.add.image(colOf(r) * ROOM_PX + wx - 4, (FLOORS - 1 - floorOf(r)) * VIEW_H + wy, "skyline").setOrigin(0, 0);
+      this.skyPatches.push({ img, w: ww, h: wh });
+    }
     for (let r = 0; r < ROOMS; r++) {
       const y = (FLOORS - 1 - floorOf(r)) * VIEW_H;
-      this.boil(this.add.image(colOf(r) * ROOM_PX - 4, y, `room${r}_0`).setOrigin(0, 0), `room${r}`);
+      this.roomImages.push(this.boil(this.add.image(colOf(r) * ROOM_PX - 4, y, `room${r}_0`).setOrigin(0, 0), `room${r}`));
     }
     this.boil(this.add.image(worldX(VAULT_ROOM, VAULT_X) + 10, floorY(VAULT_ROOM) + 4, "vault_0").setOrigin(0.5, 1), "vault");
     this.door = this.add.image(colOf(LOCKED_DOOR.left) * ROOM_PX + ROOM_PX - 20, floorY(LOCKED_DOOR.left) + 2, "lockdoor_0").setOrigin(0.5, 1);
@@ -120,8 +131,12 @@ export class RaidScene extends Phaser.Scene {
       this.hunchSprites[i] = h;
     });
 
-    const skin = SKIN[DEMO_RAIDER.traits.Skin] ?? PAPER;
-    this.puppet = new Puppet(this, "chog1-head", "body", skin, floorY(0));
+    // foreground props the Chog walks behind
+    this.boil(this.add.image(worldX(1, 40), floorY(1) + 40, "fgplant_0").setOrigin(0.5, 1).setDepth(5).setAlpha(0.95), "fgplant");
+    this.boil(this.add.image(worldX(3, 940), floorY(3) + 40, "fgplant_0").setOrigin(0.5, 1).setDepth(5).setAlpha(0.95).setFlipX(true), "fgplant");
+    this.motes();
+
+    this.puppet = new ChogSprite(this, "chog-raider", floorY(0));
     this.cameras.main.startFollow(this.puppet.root, true, 0.12, 0.12, 0, 140);
     this.buildHud();
 
@@ -139,7 +154,7 @@ export class RaidScene extends Phaser.Scene {
   private buildHud() {
     const W = this.scale.width;
     const H = this.scale.height;
-    const fixed = <T extends Phaser.GameObjects.Components.ScrollFactor>(o: T) => o.setScrollFactor(0);
+    const fixed = <T extends Phaser.GameObjects.Components.ScrollFactor & Phaser.GameObjects.Components.Depth>(o: T) => o.setScrollFactor(0).setDepth(100);
 
     fixed(this.add.graphics()).fillStyle(0x1c1618, 0.88).fillRoundedRect(16, 14, W - 32, 74, 18);
     fixed(this.add.text(36, 26, DEMO_TARGET.name.toUpperCase(), { fontFamily: FONT_TITLE, fontSize: "26px", color: PAPER }));
@@ -202,6 +217,33 @@ export class RaidScene extends Phaser.Scene {
     );
     const ring = this.add.graphics();
     this.hud = { timer, hearts, loot, lootBar, scout, special, toast, ring, map, room };
+  }
+
+  /** Dust drifting through the lamp light. */
+  private motes() {
+    const lamps: [number, number][] = [
+      [0, 600],
+      [3, 600],
+      [5, 600],
+    ];
+    for (const [room, lx] of lamps) {
+      for (let i = 0; i < 9; i++) {
+        const x0 = worldX(room, lx) + Phaser.Math.Between(-160, 160);
+        const y0 = floorY(room) - Phaser.Math.Between(120, 380);
+        const dot = this.add.circle(x0, y0, Phaser.Math.Between(2, 3), 0xfff1c4, 0.7);
+        this.tweens.add({
+          targets: dot,
+          x: x0 + Phaser.Math.Between(-40, 40),
+          y: y0 - Phaser.Math.Between(30, 90),
+          alpha: { from: 0, to: 0.8 },
+          duration: Phaser.Math.Between(2600, 5200),
+          yoyo: true,
+          repeat: -1,
+          delay: Phaser.Math.Between(0, 2000),
+          ease: "Sine.InOut",
+        });
+      }
+    }
   }
 
   // ------------------------------------------------------------ loop
@@ -328,7 +370,7 @@ export class RaidScene extends Phaser.Scene {
     const card = this.add.graphics();
     card.fillStyle(0xf3eadb, 1).fillRoundedRect(-300, -170, 600, 330, 26);
     card.lineStyle(6, 0x1c1618, 1).strokeRoundedRect(-300, -170, 600, 330, 26);
-    const head = this.add.image(-190, -30, "chog1-head").setScale(0.42).setAngle(-8);
+    const head = this.add.image(-190, 40, "chog-raider", won ? "win" : "ko").setOrigin(0.5, 1).setScale(0.75);
     const title = this.add.text(-90, -130, won ? "CLEAN SWIPE" : "CAUGHT", { fontFamily: FONT_TITLE, fontSize: "46px", color: won ? INK : ACCENT });
     const amount = this.add.text(-90, -70, won ? `+${loot.toLocaleString()} $CHOG` : "+0 $CHOG", { fontFamily: FONT_TITLE, fontSize: "40px", color: "#c79a2a" });
     const s = this.s;
@@ -379,6 +421,18 @@ export class RaidScene extends Phaser.Scene {
 
   private render() {
     const s = this.s;
+    const cam = this.cameras.main;
+    const view = cam.worldView;
+    // skip rooms that are off screen
+    for (const img of this.roomImages) {
+      img.setVisible(img.x < view.right && img.x + img.width > view.x && img.y < view.bottom && img.y + img.height > view.y);
+    }
+    for (const p of this.skyPatches) {
+      const cx = Phaser.Math.Clamp(p.img.x * 0.45 - cam.scrollX * 0.25, 0, 1800 - p.w);
+      const cy = Phaser.Math.Clamp(p.img.y * 0.35 - cam.scrollY * 0.15 + 40, 0, 880 - p.h);
+      p.img.setCrop(cx, cy, p.w, p.h).setPosition(p.img.x, p.img.y);
+      p.img.setDisplayOrigin(cx, cy);
+    }
     let x = worldX(s.room, s.x);
     let fy = floorY(s.room);
     let alpha = 1;
