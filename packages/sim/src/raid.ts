@@ -313,8 +313,11 @@ function tryClimb(s: RaidState, setup: RaidSetup, pressed: number): boolean {
   return false;
 }
 
+/** A closed locked door stops the raider this far from the wall, so it stands in front of it. */
+export const DOOR_STOP = 90;
+
 function atLockedDoor(s: RaidState): boolean {
-  return (s.room === LOCKED_DOOR.left && s.x >= ROOM_W - 60) || (s.room === LOCKED_DOOR.right && s.x <= 60);
+  return (s.room === LOCKED_DOOR.left && s.x >= ROOM_W - DOOR_STOP - 20) || (s.room === LOCKED_DOOR.right && s.x <= DOOR_STOP + 20);
 }
 
 function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): void {
@@ -342,6 +345,10 @@ function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): vo
   }
 
   s.x += dir * speedOf(s, setup);
+  if (!s.doorOpen) {
+    if (s.room === LOCKED_DOOR.left) s.x = Math.min(s.x, ROOM_W - DOOR_STOP);
+    if (s.room === LOCKED_DOOR.right) s.x = Math.max(s.x, DOOR_STOP);
+  }
 
   const col = colOf(s.room);
   if (s.x > ROOM_W) {

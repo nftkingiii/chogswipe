@@ -2,7 +2,7 @@
 // Used for demos and tests; real players send their own inputs.
 import { COLS, LOCKED_DOOR, ROOM_W, VAULT_ROOM, VAULT_X, colOf, floorOf } from "./map.js";
 import { GUARD } from "./map.js";
-import { Input, guardX, type RaidState } from "./raid.js";
+import { DOOR_STOP, Input, guardX, type RaidState } from "./raid.js";
 
 type Step =
   | { go: [room: number, x: number] }
@@ -26,7 +26,7 @@ const ROUTES: Record<Route, Step[]> = {
   upstairs: [
     { go: [0, 820] },
     { climb: "up" },
-    { go: [LOCKED_DOOR.left, ROOM_W] },
+    { go: [LOCKED_DOOR.left, ROOM_W - DOOR_STOP] },
     { grab: "door" },
     { go: [VAULT_ROOM, VAULT_X] },
     { grab: "vault" },

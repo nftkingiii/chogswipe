@@ -21,7 +21,7 @@ function canvas(w: number, h: number) {
   return c;
 }
 
-const ink = (seed: number, extra: Options = {}): Options => ({
+export const ink = (seed: number, extra: Options = {}): Options => ({
   seed,
   stroke: INK,
   strokeWidth: 4,
@@ -119,15 +119,15 @@ export function bakeRoom(scene: Phaser.Scene, index: number, last: boolean) {
   });
 }
 
-type RC = ReturnType<typeof rough.canvas>;
+export type RC = ReturnType<typeof rough.canvas>;
 
-function frame(rc: RC, seed: number, x: number, y: number, w: number, h: number, fill: string, art?: (x: number, y: number, w: number, h: number) => void) {
+export function frame(rc: RC, seed: number, x: number, y: number, w: number, h: number, fill: string, art?: (x: number, y: number, w: number, h: number) => void) {
   rc.rectangle(x - 12, y - 12, w + 24, h + 24, ink(seed, { fill: "#c79a4a", fillStyle: "solid", strokeWidth: 4 }));
   rc.rectangle(x, y, w, h, ink(seed + 1, { fill, fillStyle: "solid", strokeWidth: 3 }));
   art?.(x, y, w, h);
 }
 
-function fwogDoodle(rc: RC, seed: number, cx: number, cy: number) {
+export function fwogDoodle(rc: RC, seed: number, cx: number, cy: number) {
   rc.ellipse(cx, cy + 10, 90, 56, ink(seed, { fill: "#7cc36a", fillStyle: "solid", strokeWidth: 3 }));
   rc.circle(cx - 22, cy - 18, 30, ink(seed + 1, { fill: "#fff", fillStyle: "solid", strokeWidth: 3 }));
   rc.circle(cx + 22, cy - 18, 30, ink(seed + 2, { fill: "#fff", fillStyle: "solid", strokeWidth: 3 }));
@@ -136,7 +136,7 @@ function fwogDoodle(rc: RC, seed: number, cx: number, cy: number) {
   rc.arc(cx, cy + 12, 34, 16, 0, Math.PI, false, ink(seed + 5, { strokeWidth: 3 }));
 }
 
-function coinDoodle(ctx: CanvasRenderingContext2D, rc: RC, seed: number, cx: number, cy: number) {
+export function coinDoodle(ctx: CanvasRenderingContext2D, rc: RC, seed: number, cx: number, cy: number) {
   rc.circle(cx, cy, 78, ink(seed, { fill: "#f0c35a", fillStyle: "solid" }));
   rc.circle(cx, cy, 56, ink(seed + 1, { strokeWidth: 2 }));
   ctx.font = "34px 'Luckiest Guy'";
@@ -146,7 +146,7 @@ function coinDoodle(ctx: CanvasRenderingContext2D, rc: RC, seed: number, cx: num
   ctx.textAlign = "start";
 }
 
-function wanted(ctx: CanvasRenderingContext2D, rc: RC, seed: number, x: number, y: number, w: number) {
+export function wanted(ctx: CanvasRenderingContext2D, rc: RC, seed: number, x: number, y: number, w: number) {
   ctx.font = "26px 'Luckiest Guy'";
   ctx.fillStyle = "#c0392b";
   ctx.textAlign = "center";
@@ -160,7 +160,7 @@ function wanted(ctx: CanvasRenderingContext2D, rc: RC, seed: number, x: number, 
   ctx.textAlign = "start";
 }
 
-function couch(rc: RC, seed: number, x: number) {
+export function couch(rc: RC, seed: number, x: number) {
   const y = FLOOR_Y;
   rc.rectangle(x, y - 150, 300, 80, ink(seed + 100, { fill: "#8f6bb0", fillStyle: "solid" }));
   rc.rectangle(x - 20, y - 100, 340, 70, ink(seed + 101, { fill: "#a07fc0", fillStyle: "solid" }));
@@ -171,7 +171,7 @@ function couch(rc: RC, seed: number, x: number) {
   rc.rectangle(x + 296, y - 30, 14, 30, ink(seed + 106, { fill: INK, fillStyle: "solid", strokeWidth: 2 }));
 }
 
-function shelf(rc: RC, seed: number, x: number) {
+export function shelf(rc: RC, seed: number, x: number) {
   const y = FLOOR_Y;
   rc.rectangle(x, y - 330, 220, 330, ink(seed + 110, { fill: "#9a6a44", fillStyle: "solid" }));
   const books = ["#e0528a", "#6f8fb3", "#f0c35a", "#7ec4a8", "#c96a5a", "#a07fc0"];
@@ -189,11 +189,11 @@ function shelf(rc: RC, seed: number, x: number) {
   }
 }
 
-function rug(rc: RC, seed: number, x0: number, x1: number, fill: string) {
+export function rug(rc: RC, seed: number, x0: number, x1: number, fill: string) {
   rc.ellipse((x0 + x1) / 2, FLOOR_Y + 48, x1 - x0, 46, ink(seed + 130, { fill, fillStyle: "zigzag", hachureGap: 9, fillWeight: 2.5, strokeWidth: 3 }));
 }
 
-function wall(rc: RC, ctx: CanvasRenderingContext2D, seed: number, x: number, right: boolean) {
+export function wall(rc: RC, ctx: CanvasRenderingContext2D, seed: number, x: number, right: boolean) {
   ctx.fillStyle = "#3b3033";
   ctx.fillRect(x, 58, 60, FLOOR_Y - 58 - 270);
   rc.rectangle(x, 58, 60, FLOOR_Y - 58 - 270, ink(seed, { strokeWidth: 5, fill: "#4a3d40", fillStyle: "hachure", hachureGap: 10 }));
@@ -201,7 +201,7 @@ function wall(rc: RC, ctx: CanvasRenderingContext2D, seed: number, x: number, ri
   rc.line(x + (right ? 0 : 60), FLOOR_Y - 260, x + (right ? 0 : 60), FLOOR_Y, ink(seed + 2, { strokeWidth: 6 }));
 }
 
-function vignette(ctx: CanvasRenderingContext2D, W: number, H: number) {
+export function vignette(ctx: CanvasRenderingContext2D, W: number, H: number) {
   const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95);
   g.addColorStop(0, "rgba(28,22,24,0)");
   g.addColorStop(1, "rgba(28,22,24,0.28)");
@@ -209,7 +209,7 @@ function vignette(ctx: CanvasRenderingContext2D, W: number, H: number) {
   ctx.fillRect(0, 0, W, H);
 }
 
-function lamp(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingContext2D, seed: number, x: number) {
+export function lamp(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingContext2D, seed: number, x: number) {
   rc.line(x, 58, x, 140, ink(seed + 11, { strokeWidth: 3 }));
   rc.polygon(
     [
@@ -227,7 +227,7 @@ function lamp(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingContext2D
   ctx.fillRect(x - 280, 200, 560, 420);
 }
 
-function plant(rc: ReturnType<typeof rough.canvas>, seed: number, x: number) {
+export function plant(rc: ReturnType<typeof rough.canvas>, seed: number, x: number) {
   rc.polygon(
     [
       [x - 40, FLOOR_Y - 90],
@@ -242,7 +242,7 @@ function plant(rc: ReturnType<typeof rough.canvas>, seed: number, x: number) {
   }
 }
 
-function door(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingContext2D, seed: number, x: number, fill: string) {
+export function door(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingContext2D, seed: number, x: number, fill: string) {
   ctx.fillStyle = "rgba(28,22,24,0.85)";
   ctx.fillRect(x, FLOOR_Y - 250, 96, 250);
   rc.rectangle(x, FLOOR_Y - 250, 96, 250, ink(seed + 30, { strokeWidth: 5 }));

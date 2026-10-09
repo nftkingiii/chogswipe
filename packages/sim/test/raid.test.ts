@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  DOOR_STOP,
   GUARD,
   Input,
   LINKS,
@@ -111,10 +112,10 @@ describe("map routes", () => {
     const su = setup([]);
     const s = createRaid(su);
     s.room = 4;
-    s.x = ROOM_W - 20;
-    for (let i = 0; i < 30; i++) step(s, su, Input.RIGHT);
+    s.x = ROOM_W - 200;
+    for (let i = 0; i < 40; i++) step(s, su, Input.RIGHT);
     expect(s.room).toBe(4);
-    expect(s.x).toBe(ROOM_W);
+    expect(s.x).toBe(ROOM_W - DOOR_STOP);
   });
 
   it("vents only work with Vent Crawl", () => {
