@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { recoverTypedDataAddress, type Address, type Hex } from "viem";
 import { createSiweMessage } from "viem/siwe";
-import { Input, ROOMS, VAULT_X, createRaid, step, type InputLog, type RaidSetup, type RaidState } from "@chogswipe/sim";
+import { createRaid, makeBot, step, type InputLog, type RaidSetup } from "@chogswipe/sim";
 import { buildApp } from "../src/app.js";
 import type { Chain, VaultState } from "../src/chain.js";
 import { HOUSE_BASE } from "../src/chogs.js";
@@ -39,22 +39,14 @@ function fakeChain(): Chain & { owners: Map<number, Address>; balances: Map<numb
   };
 }
 
-/** Walk to the vault, grab, walk home, jumping every armed trap. */
+/** Autopilot run through the kitchen, jumping every armed trap. */
 function recordRun(su: RaidSetup): InputLog {
   const s = createRaid(su);
+  const bot = makeBot({ route: "kitchen", seeTraps: true });
   const log: [number, number][] = [];
   let prev = -1;
-  const policy = (st: RaidState) => {
-    const home = st.lootBps > 0;
-    let mask: number = home ? Input.LEFT : Input.RIGHT;
-    if (!home && st.room === ROOMS - 1 && st.x >= VAULT_X - 40) mask = Input.GRAB;
-    const dir = home ? -1 : 1;
-    const near = st.traps.some((t) => t.armed && t.room === st.room && (t.x - st.x) * dir > 0 && (t.x - st.x) * dir <= 40);
-    if (near && st.air === 0 && st.stun === 0 && !(st.prevMask & Input.JUMP)) mask |= Input.JUMP;
-    return mask;
-  };
   while (!s.result) {
-    const m = policy(s);
+    const m = bot(s);
     if (m !== prev) log.push([s.t, m]);
     prev = m;
     step(s, su, m);
@@ -183,7 +175,7 @@ describe("referee", () => {
     const start = (
       await app.inject({ method: "POST", url: "/raids", headers: authed(token), payload: { raiderToken: 1, targetToken: HOUSE_BASE } })
     ).json();
-    clock += 120_000;
+    clock += 150_000;
     const fin = (await app.inject({ method: "POST", url: `/raids/${start.raidId}/finish`, headers: authed(token), payload: { inputs: [] } })).json();
     expect(fin.outcome.result).toBe("timeout");
     expect(fin.result).toBeNull();

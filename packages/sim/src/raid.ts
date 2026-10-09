@@ -3,13 +3,26 @@
 // outcome from the same setup and input log.
 
 import type { Loadout, TrapKind } from "./loadout.js";
+import {
+  COLS,
+  ENTRY_ROOM,
+  GUARD,
+  LINKS,
+  LINK_REACH,
+  LOCKED_DOOR,
+  ROOMS,
+  ROOM_W,
+  VAULT_ROOM,
+  VAULT_X,
+  blockedSpots,
+  colOf,
+} from "./map.js";
 import { rng } from "./rng.js";
 
+export { ROOMS, ROOM_W, VAULT_X, VAULT_ROOM };
+
 export const TICK_HZ = 30;
-export const ROOMS = 3;
-export const ROOM_W = 960;
-export const VAULT_X = ROOM_W - 80; // in the last room
-export const RAID_TICKS = 90 * TICK_HZ;
+export const RAID_TICKS = 120 * TICK_HZ;
 
 const TRAP_REACH = 24;
 const JUMP_TICKS = 18;
@@ -17,6 +30,12 @@ const BASE_SPEED = 8;
 const BASE_HP = 3;
 const GRAB_TICKS = 45;
 const LOCKPICK_GRAB_TICKS = 15;
+export const CLIMB_TICKS = 24;
+const VENT_TICKS = 36;
+const DOOR_TICKS = 90;
+const LOCKPICK_DOOR_TICKS = 30;
+const GUARD_REACH = 46;
+const GUARD_COOLDOWN = 90;
 const FULL = 10_000; // loot in basis points of the capped amount
 
 export const Input = {
@@ -26,7 +45,10 @@ export const Input = {
   SCOUT: 8,
   SPECIAL: 16,
   GRAB: 32,
+  UP: 64,
+  DOWN: 128,
 } as const;
+export const INPUT_MASK_MAX = 255;
 
 /** Input changes: [tick, mask], ticks strictly increasing. A mask holds until the next entry. */
 export type InputLog = ReadonlyArray<readonly [number, number]>;
@@ -54,7 +76,11 @@ export type RaidEvent =
   | { t: number; type: "reveal"; traps: number[]; by: string }
   | { t: number; type: "disarm"; trap: number; by: string }
   | { t: number; type: "hunch"; trap: number }
-  | { t: number; type: "room"; room: number }
+  | { t: number; type: "room"; room: number; via: "walk" | "stairs" | "vent" | "spring" }
+  | { t: number; type: "climb"; kind: "stairs" | "vent"; from: number; to: number }
+  | { t: number; type: "door"; by: "pick" | "Lockpick" | "Rage Horns" }
+  | { t: number; type: "caught" }
+  | { t: number; type: "guard-out"; by: string }
   | { t: number; type: "grab" }
   | { t: number; type: "drop"; lootBps: number }
   | { t: number; type: "second-life" }
@@ -67,6 +93,14 @@ interface TrapState extends TrapPlacement {
   armed: boolean;
   revealed: boolean;
   hunched: boolean;
+}
+
+export interface Climb {
+  kind: "stairs" | "vent";
+  from: { room: number; x: number };
+  to: { room: number; x: number };
+  left: number;
+  total: number;
 }
 
 export interface RaidState {
@@ -87,6 +121,11 @@ export interface RaidState {
   guardUsed: boolean;
   secondLifeUsed: boolean;
   alarmImmune: boolean;
+  climb: Climb | null;
+  doorOpen: boolean;
+  doorWork: number;
+  guardOut: boolean;
+  guardCooldown: number;
   prevMask: number;
   traps: TrapState[];
   events: RaidEvent[];
@@ -103,12 +142,26 @@ export interface RaidOutcome {
 
 const SCOUT_CHARGES: Record<Loadout["scout"], number> = {
   Hunch: 0,
-  "X-Ray": 2,
+  "X-Ray": 3,
   "Laser Eyes": 2,
   Peek: 1,
-  "Tear Sense": 3,
+  "Tear Sense": 4,
   "Wild Glance": 3,
 };
+
+// ------------------------------------------------------------------ guard
+
+/** Guard x on a deterministic back-and-forth patrol. */
+export function guardX(t: number): number {
+  const span = GUARD.x1 - GUARD.x0;
+  const p = (t * GUARD.speed) % (span * 2);
+  return p <= span ? GUARD.x0 + p : GUARD.x1 - (p - span);
+}
+
+export function guardFacing(t: number): 1 | -1 {
+  const span = GUARD.x1 - GUARD.x0;
+  return (t * GUARD.speed) % (span * 2) < span ? 1 : -1;
+}
 
 // ------------------------------------------------------------------ layout
 
@@ -117,11 +170,12 @@ export function validateHideout(h: Hideout): string[] {
   if (h.traps.length > h.defender.stats.trapSlots) {
     errors.push(`too many traps: ${h.traps.length} > ${h.defender.stats.trapSlots}`);
   }
+  const blocked = blockedSpots();
   h.traps.forEach((tr, i) => {
     if (tr.kind !== "Tripwire" && tr.kind !== h.defender.trap) errors.push(`trap ${i}: ${tr.kind} not in loadout`);
     if (!Number.isInteger(tr.room) || tr.room < 0 || tr.room >= ROOMS) errors.push(`trap ${i}: bad room`);
-    const maxX = tr.room === ROOMS - 1 ? VAULT_X - 120 : ROOM_W - 120;
-    if (!Number.isInteger(tr.x) || tr.x < 120 || tr.x > maxX) errors.push(`trap ${i}: x out of bounds`);
+    if (!Number.isInteger(tr.x) || tr.x < 60 || tr.x > ROOM_W - 60) errors.push(`trap ${i}: x out of bounds`);
+    if (blocked.some((b) => b.room === tr.room && Math.abs(b.x - tr.x) < b.r)) errors.push(`trap ${i}: blocks a doorway, stairs, vent or the vault`);
     h.traps.forEach((other, j) => {
       if (j > i && other.room === tr.room && Math.abs(other.x - tr.x) < 64) errors.push(`traps ${i} and ${j} too close`);
     });
@@ -135,9 +189,9 @@ export function createRaid(setup: RaidSetup): RaidState {
   const { raider, hideout } = setup;
   const fog = hideout.defender.aura === "Fog" ? 1 : 0;
   const charges = SCOUT_CHARGES[raider.scout];
-  const s: RaidState = {
+  return {
     t: 0,
-    room: 0,
+    room: ENTRY_ROOM,
     x: 0,
     facing: 1,
     air: 0,
@@ -153,12 +207,16 @@ export function createRaid(setup: RaidSetup): RaidState {
     guardUsed: false,
     secondLifeUsed: false,
     alarmImmune: false,
+    climb: null,
+    doorOpen: false,
+    doorWork: 0,
+    guardOut: false,
+    guardCooldown: 0,
     prevMask: 0,
     traps: hideout.traps.map((tr) => ({ ...tr, armed: true, revealed: false, hunched: false })),
     events: [],
     result: null,
   };
-  return s;
 }
 
 /** Defender trap durations scale with the defender's tier power. */
@@ -177,18 +235,28 @@ export function step(s: RaidState, setup: RaidSetup, mask: number): void {
   s.timeLeft -= 1;
   if (s.boost > 0) s.boost -= 1;
   if (s.invert > 0) s.invert -= 1;
+  if (s.guardCooldown > 0) s.guardCooldown -= 1;
 
-  if (s.stun > 0) {
+  if (s.climb) {
+    s.climb.left -= 1;
+    if (s.climb.left <= 0) {
+      s.room = s.climb.to.room;
+      s.x = s.climb.to.x;
+      s.events.push({ t: s.t, type: "room", room: s.room, via: s.climb.kind });
+      s.climb = null;
+    }
+  } else if (s.stun > 0) {
     s.stun -= 1;
   } else {
     if (pressed & Input.SCOUT) scout(s, setup);
     if (pressed & Input.SPECIAL) special(s, setup);
-    move(s, setup, mask, pressed);
+    if (!tryClimb(s, setup, pressed)) move(s, setup, mask, pressed);
   }
 
-  if (s.air === 0) {
+  if (!s.climb && s.air === 0) {
     hunch(s, setup);
     triggerTraps(s, setup);
+    guard(s, setup);
   }
 
   if (s.hp <= 0) {
@@ -201,7 +269,7 @@ export function step(s: RaidState, setup: RaidSetup, mask: number): void {
     }
   }
 
-  if (s.room === 0 && s.x <= 0 && s.lootBps > 0) {
+  if (s.room === ENTRY_ROOM && s.x <= 0 && s.lootBps > 0 && !s.climb) {
     let loot = s.lootBps;
     if (hideout.defender.aura === "Burn") loot = Math.floor((loot * 9_000) / FULL);
     if (hideout.defender.head === "Hex") loot = Math.floor((loot * 9_000) / FULL);
@@ -228,6 +296,27 @@ function speedOf(s: RaidState, setup: RaidSetup): number {
   return v;
 }
 
+/** UP at a lower link end or DOWN at an upper one starts a climb. Vents need Vent Crawl. */
+function tryClimb(s: RaidState, setup: RaidSetup, pressed: number): boolean {
+  if (s.air > 0 || !(pressed & (Input.UP | Input.DOWN))) return false;
+  for (const l of LINKS) {
+    if (l.kind === "vent" && setup.raider.head !== "Vent Crawl") continue;
+    const up = pressed & Input.UP && l.a.room === s.room && Math.abs(l.a.x - s.x) <= LINK_REACH;
+    const down = pressed & Input.DOWN && l.b.room === s.room && Math.abs(l.b.x - s.x) <= LINK_REACH;
+    if (!up && !down) continue;
+    const [from, to] = up ? [l.a, l.b] : [l.b, l.a];
+    const total = l.kind === "vent" ? VENT_TICKS : CLIMB_TICKS;
+    s.climb = { kind: l.kind, from: { room: s.room, x: s.x }, to: { ...to }, left: total, total };
+    s.events.push({ t: s.t, type: "climb", kind: l.kind, from: from.room, to: to.room });
+    return true;
+  }
+  return false;
+}
+
+function atLockedDoor(s: RaidState): boolean {
+  return (s.room === LOCKED_DOOR.left && s.x >= ROOM_W - 60) || (s.room === LOCKED_DOOR.right && s.x <= 60);
+}
+
 function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): void {
   let dir = (mask & Input.RIGHT ? 1 : 0) - (mask & Input.LEFT ? 1 : 0);
   if (s.invert > 0) dir = -dir;
@@ -236,23 +325,42 @@ function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): vo
   if (s.air > 0) s.air -= 1;
   else if (pressed & Input.JUMP) s.air = JUMP_TICKS;
 
+  // working the locked door: hold GRAB next to it
+  if (!s.doorOpen && atLockedDoor(s) && mask & Input.GRAB && s.air === 0) {
+    if (setup.raider.head === "Rage Horns") {
+      s.doorOpen = true;
+      s.events.push({ t: s.t, type: "door", by: "Rage Horns" });
+    } else {
+      s.doorWork += 1;
+      const need = setup.raider.head === "Lockpick" ? LOCKPICK_DOOR_TICKS : DOOR_TICKS;
+      if (s.doorWork >= need) {
+        s.doorOpen = true;
+        s.events.push({ t: s.t, type: "door", by: setup.raider.head === "Lockpick" ? "Lockpick" : "pick" });
+      }
+    }
+    return;
+  }
+
   s.x += dir * speedOf(s, setup);
 
+  const col = colOf(s.room);
   if (s.x > ROOM_W) {
-    if (s.room < ROOMS - 1) {
+    const blocked = s.room === LOCKED_DOOR.left && !s.doorOpen;
+    if (col < COLS - 1 && !blocked) {
       s.room += 1;
       s.x = 0;
-      s.events.push({ t: s.t, type: "room", room: s.room });
+      s.events.push({ t: s.t, type: "room", room: s.room, via: "walk" });
     } else s.x = ROOM_W;
   } else if (s.x < 0) {
-    if (s.room > 0) {
+    const blocked = s.room === LOCKED_DOOR.right && !s.doorOpen;
+    if (col > 0 && !blocked) {
       s.room -= 1;
       s.x = ROOM_W;
-      s.events.push({ t: s.t, type: "room", room: s.room });
+      s.events.push({ t: s.t, type: "room", room: s.room, via: "walk" });
     } else s.x = 0;
   }
 
-  const atVault = s.room === ROOMS - 1 && s.x >= VAULT_X - 40;
+  const atVault = s.room === VAULT_ROOM && s.x >= VAULT_X - 40;
   if (atVault && s.lootBps === 0 && mask & Input.GRAB && s.air === 0) {
     s.grab += 1;
     const need = setup.raider.head === "Lockpick" ? LOCKPICK_GRAB_TICKS : GRAB_TICKS;
@@ -263,6 +371,19 @@ function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): vo
   } else if (s.lootBps === 0) {
     s.grab = 0;
   }
+}
+
+function guard(s: RaidState, setup: RaidSetup): void {
+  if (s.guardOut || s.room !== GUARD.room || s.guardCooldown > 0) return;
+  if (setup.raider.body === "Disguise" && s.lootBps === 0) return; // looks like staff until it's carrying loot
+  const gx = guardX(s.t);
+  if (Math.abs(gx - s.x) > GUARD_REACH) return;
+  s.events.push({ t: s.t, type: "caught" });
+  s.guardCooldown = GUARD_COOLDOWN;
+  s.stun = Math.max(s.stun, scaled(45, setup));
+  s.hp -= 1;
+  // thrown back the way it came
+  s.x = Math.max(0, Math.min(ROOM_W, s.x + (s.x < gx ? -140 : 140)));
 }
 
 /** Armed traps in the current room, ordered by distance in the facing direction. */
@@ -309,7 +430,7 @@ function scout(s: RaidState, setup: RaidSetup): void {
     case "Wild Glance": {
       const hidden = armed.filter(({ tr }) => !tr.revealed).map(({ i }) => i);
       if (hidden.length === 0) return;
-      const r = rng((setupSeed(setup) ^ s.t) >>> 0)();
+      const r = rng((setup.seed ^ s.t) >>> 0)();
       reveal(s, [hidden[r % hidden.length]!], kind);
       break;
     }
@@ -317,10 +438,6 @@ function scout(s: RaidState, setup: RaidSetup): void {
       return;
   }
   s.scoutCharges -= 1;
-}
-
-function setupSeed(setup: RaidSetup): number {
-  return setup.seed >>> 0;
 }
 
 function special(s: RaidState, setup: RaidSetup): void {
@@ -340,12 +457,20 @@ function special(s: RaidState, setup: RaidSetup): void {
       break;
     }
     case "Decoy Coin": {
+      if (s.room === GUARD.room && !s.guardOut) {
+        s.guardCooldown = 180; // guard goes after the coin
+        break;
+      }
       const target = ahead(s, 320).find((i) => s.traps[i]!.kind === "Bait Coin");
       if (target === undefined) return;
       disarm(s, target, kind);
       break;
     }
     case "Stink Bomb":
+      if (s.room === GUARD.room && !s.guardOut) {
+        s.guardOut = true;
+        s.events.push({ t: s.t, type: "guard-out", by: kind });
+      }
       s.traps.forEach((tr, i) => {
         if (tr.armed && tr.room === s.room && Math.abs(tr.x - s.x) <= 120) disarm(s, i, kind);
       });
@@ -412,11 +537,9 @@ function triggerTraps(s: RaidState, setup: RaidSetup): void {
         stun(60);
         break;
       case "Spring Plate":
-        if (s.room > 0) {
-          s.room -= 1;
-          s.x = ROOM_W - 40;
-          s.events.push({ t: s.t, type: "room", room: s.room });
-        } else s.x = 40;
+        s.x = Math.max(40, s.x - s.facing * 260);
+        s.x = Math.min(ROOM_W - 40, s.x);
+        s.events.push({ t: s.t, type: "room", room: s.room, via: "spring" });
         break;
       case "Slick Floor": {
         stun(15);
@@ -453,8 +576,9 @@ export function simulateRaid(setup: RaidSetup, inputs: InputLog): RaidOutcome {
   let idx = 0;
   let mask = 0;
   let last = -1;
-  for (const [t] of inputs) {
+  for (const [t, m] of inputs) {
     if (!Number.isInteger(t) || t <= last) throw new Error("input log ticks must be increasing integers");
+    if (!Number.isInteger(m) || m < 0 || m > INPUT_MASK_MAX) throw new Error("bad input mask");
     last = t;
   }
   while (!s.result) {

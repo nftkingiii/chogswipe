@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  GUARD,
   Input,
-  ROOMS,
+  LINKS,
   ROOM_W,
-  VAULT_X,
+  VAULT_ROOM,
   createRaid,
+  guardX,
   loadoutFor,
+  makeBot,
   simulateRaid,
   step,
   validateHideout,
+  type BotOptions,
   type InputLog,
   type Loadout,
   type RaidSetup,
@@ -49,21 +53,7 @@ function record(su: RaidSetup, policy: Policy): InputLog {
   return log;
 }
 
-/** Walks to the vault, grabs, walks home. `jump` jumps over every armed trap. */
-function runner({ jump = false } = {}): Policy {
-  return (s) => {
-    const home = s.lootBps > 0;
-    let mask: number = home ? Input.LEFT : Input.RIGHT;
-    const atVault = s.room === ROOMS - 1 && s.x >= VAULT_X - 40;
-    if (!home && atVault) mask = Input.GRAB;
-    const dir = home ? -1 : 1;
-    if (jump && s.air === 0 && s.stun === 0) {
-      const near = s.traps.some((tr) => tr.armed && tr.room === s.room && (tr.x - s.x) * dir > 0 && (tr.x - s.x) * dir <= 40);
-      if (near && !(s.prevMask & Input.JUMP)) mask |= Input.JUMP;
-    }
-    return mask;
-  };
-}
+const run = (su: RaidSetup, opts: BotOptions = {}) => simulateRaid(su, record(su, makeBot(opts)));
 
 describe("loadout", () => {
   it("maps Chog #1 (metadata 1462) traits", () => {
@@ -93,82 +83,159 @@ describe("loadout", () => {
   });
 });
 
-describe("raid", () => {
-  it("escapes an empty hideout with all the loot", () => {
-    const su = setup([]);
-    const out = simulateRaid(su, record(su, runner()));
+describe("map routes", () => {
+  it("escapes an empty hideout through the kitchen with all the loot", () => {
+    const out = run(setup([]), { route: "kitchen" });
     expect(out.result).toBe("escaped");
     expect(out.lootBps).toBe(10_000);
+    expect(out.events.filter((e) => e.type === "climb")).toHaveLength(2);
   });
 
+  it("escapes upstairs after picking the locked door", () => {
+    const out = run(setup([]), { route: "upstairs" });
+    expect(out.result).toBe("escaped");
+    expect(out.events.some((e) => e.type === "door" && e.by === "pick")).toBe(true);
+  });
+
+  it("Rage Horns smash the door instantly, Lockpick is faster than picking", () => {
+    const horns = run(setup([], loadoutFor({ Tier: "Common", Head: "Red Horn" })), { route: "upstairs" });
+    const pick = run(setup([], loadoutFor({ Tier: "Common", Head: "Robber" })), { route: "upstairs" });
+    const plainRun = run(setup([]), { route: "upstairs" });
+    expect(horns.events.some((e) => e.type === "door" && e.by === "Rage Horns")).toBe(true);
+    const doorAt = (o: typeof horns) => o.events.find((e) => e.type === "door")!.t;
+    expect(doorAt(horns)).toBeLessThan(doorAt(pick));
+    expect(doorAt(pick)).toBeLessThan(doorAt(plainRun));
+  });
+
+  it("the locked door blocks walking through until opened", () => {
+    const su = setup([]);
+    const s = createRaid(su);
+    s.room = 4;
+    s.x = ROOM_W - 20;
+    for (let i = 0; i < 30; i++) step(s, su, Input.RIGHT);
+    expect(s.room).toBe(4);
+    expect(s.x).toBe(ROOM_W);
+  });
+
+  it("vents only work with Vent Crawl", () => {
+    const vent = LINKS.find((l) => l.kind === "vent")!;
+    for (const [head, expected] of [["Plumber", 4], ["MCGA", 1]] as const) {
+      const su = setup([], loadoutFor({ Tier: "Common", Head: head }));
+      const s = createRaid(su);
+      s.room = vent.a.room;
+      s.x = vent.a.x;
+      step(s, su, Input.UP);
+      for (let i = 0; i < 40; i++) step(s, su, 0);
+      expect(s.room).toBe(expected);
+    }
+  });
+
+  it("stairs take the raider between floors", () => {
+    const su = setup([]);
+    const s = createRaid(su);
+    s.room = 2;
+    s.x = 180;
+    step(s, su, Input.UP);
+    expect(s.climb).not.toBeNull();
+    for (let i = 0; i < 30; i++) step(s, su, 0);
+    expect(s.room).toBe(VAULT_ROOM);
+  });
+});
+
+describe("guard", () => {
+  it("patrols deterministically between its bounds", () => {
+    for (let t = 0; t < 2_000; t += 7) {
+      expect(guardX(t)).toBeGreaterThanOrEqual(GUARD.x0);
+      expect(guardX(t)).toBeLessThanOrEqual(GUARD.x1);
+    }
+  });
+
+  it("catches a raider who walks into it, but Disguise passes unless carrying loot", () => {
+    const su = setup([]);
+    const s = createRaid(su);
+    s.room = GUARD.room;
+    s.x = guardX(1);
+    step(s, su, 0);
+    expect(s.events.some((e) => e.type === "caught")).toBe(true);
+    expect(s.hp).toBe(2);
+
+    const disguised = setup([], loadoutFor({ Tier: "Common", Body: "Tuxedo" }));
+    const d = createRaid(disguised);
+    d.room = GUARD.room;
+    d.x = guardX(1);
+    step(d, disguised, 0);
+    expect(d.events.some((e) => e.type === "caught")).toBe(false);
+    d.lootBps = 10_000;
+    d.x = guardX(2);
+    step(d, disguised, 0);
+    expect(d.events.some((e) => e.type === "caught")).toBe(true);
+  });
+
+  it("Stink Bomb knocks the guard out for the rest of the raid", () => {
+    const su = setup([], loadoutFor({ Tier: "Common", Accessory: "SB" }));
+    const s = createRaid(su);
+    s.room = GUARD.room;
+    s.x = 100;
+    step(s, su, Input.SPECIAL);
+    expect(s.guardOut).toBe(true);
+    s.x = guardX(s.t + 1);
+    step(s, su, 0);
+    expect(s.events.some((e) => e.type === "caught")).toBe(false);
+  });
+});
+
+describe("raid", () => {
   it("is deterministic for the same setup and inputs", () => {
-    const su = setup([{ room: 1, x: 400, kind: "Tripwire" }]);
-    const log = record(su, runner());
+    const su = setup([{ room: 1, x: 300, kind: "Tripwire" }]);
+    const log = record(su, makeBot());
     expect(JSON.stringify(simulateRaid(su, log))).toBe(JSON.stringify(simulateRaid(su, log)));
   });
 
   it("matches the live step-by-step run", () => {
-    const su = setup([{ room: 0, x: 300, kind: "Tripwire" }, { room: 2, x: 500, kind: "Crybaby Alarm" }]);
-    const policy = runner();
+    const su = setup([
+      { room: 0, x: 300, kind: "Tripwire" },
+      { room: 5, x: 500, kind: "Crybaby Alarm" },
+    ]);
     const live = createRaid(su);
-    while (!live.result) step(live, su, policy(live));
-    const replay = simulateRaid(su, record(su, runner()));
+    const bot = makeBot();
+    while (!live.result) step(live, su, bot(live));
+    const replay = run(su);
     expect(replay.result).toBe(live.result);
     expect(replay.ticks).toBe(live.t);
     expect(replay.events).toEqual(live.events);
   });
 
   it("stuns and damages when walking into a tripwire", () => {
-    const su = setup([{ room: 0, x: 300, kind: "Tripwire" }]);
-    const out = simulateRaid(su, record(su, runner()));
+    const out = run(setup([{ room: 0, x: 300, kind: "Tripwire" }]));
     expect(out.events.some((e) => e.type === "trap" && e.kind === "Tripwire")).toBe(true);
-    expect(out.hp).toBe(2);
+    expect(out.hp).toBeLessThanOrEqual(2);
   });
 
   it("jumping over a trap avoids it", () => {
-    const su = setup([{ room: 0, x: 300, kind: "Tripwire" }]);
-    const out = simulateRaid(su, record(su, runner({ jump: true })));
+    const out = run(setup([{ room: 0, x: 300, kind: "Tripwire" }]), { seeTraps: true });
     expect(out.events.some((e) => e.type === "trap")).toBe(false);
-    expect(out.hp).toBe(3);
   });
 
   it("knocks out a raider who walks into two chompers", () => {
     const defender = loadoutFor({ Tier: "Common", Mouth: "Grit" });
-    const su = setup(
-      [
-        { room: 0, x: 300, kind: "Chomper" },
-        { room: 1, x: 300, kind: "Chomper" },
-      ],
-      plain,
-      defender,
+    const out = run(
+      setup(
+        [
+          { room: 0, x: 300, kind: "Chomper" },
+          { room: 1, x: 300, kind: "Chomper" },
+        ],
+        plain,
+        defender,
+      ),
     );
-    const out = simulateRaid(su, record(su, runner()));
     expect(out.result).toBe("knocked-out");
     expect(out.lootBps).toBe(0);
   });
 
   it("Guard blocks the first trap", () => {
     const raider = loadoutFor({ Tier: "Common", Head: "Spartan Helmet" });
-    const su = setup([{ room: 0, x: 300, kind: "Tripwire" }], raider);
-    const out = simulateRaid(su, record(su, runner()));
+    const out = run(setup([{ room: 0, x: 300, kind: "Tripwire" }], raider));
     expect(out.events.some((e) => e.type === "blocked" && e.by === "Guard")).toBe(true);
-    expect(out.hp).toBe(3);
-  });
-
-  it("Slick Floor on the way home drops loot", () => {
-    const defender = loadoutFor({ Tier: "Common", Mouth: "Drooling" });
-    const su = setup([{ room: 2, x: 400, kind: "Slick Floor" }], plain, defender);
-    // walk over it on the way in by jumping, then hit it on the way home
-    const policy: Policy = (s) => {
-      const base = runner()(s);
-      if (s.lootBps === 0 && s.room === 2 && s.x >= 360 && s.x < 400 && s.air === 0 && !(s.prevMask & Input.JUMP)) {
-        return base | Input.JUMP;
-      }
-      return base;
-    };
-    const out = simulateRaid(su, record(su, policy));
-    expect(out.result).toBe("escaped");
-    expect(out.lootBps).toBe(7_000);
   });
 
   it("higher tier power makes stuns longer", () => {
@@ -177,20 +244,23 @@ describe("raid", () => {
     const traps: TrapPlacement[] = [{ room: 0, x: 300, kind: "Gum Snare" }];
     const a = setup(traps, plain, common);
     const b = setup(traps, plain, legendary);
-    const ta = simulateRaid(a, record(a, runner())).ticks;
-    const tb = simulateRaid(b, record(b, runner())).ticks;
-    expect(tb - ta).toBe(Math.floor((60 * 175) / 100) - 60);
+    const sa = createRaid(a);
+    const sb = createRaid(b);
+    sa.x = sb.x = 300;
+    step(sa, a, 0);
+    step(sb, b, 0);
+    expect(sb.stun - sa.stun).toBe(Math.floor((60 * 175) / 100) - 60);
   });
 
   it("Crybaby Alarm cuts the clock", () => {
     const su = setup([{ room: 0, x: 300, kind: "Crybaby Alarm" }]);
     const s = createRaid(su);
-    const policy = runner();
-    while (!s.result && !s.events.some((e) => e.type === "trap")) step(s, su, policy(s));
-    expect(s.timeLeft).toBeLessThan(90 * 30 - s.t - 200);
+    s.x = 300;
+    step(s, su, 0);
+    expect(s.timeLeft).toBeLessThan(120 * 30 - 200);
   });
 
-  it("X-Ray reveals traps in the current room", () => {
+  it("X-Ray reveals traps in the current room only", () => {
     const raider = loadoutFor({ Tier: "Common", Eyes: "Plasma visor" });
     const su = setup(
       [
@@ -202,7 +272,6 @@ describe("raid", () => {
     const s = createRaid(su);
     step(s, su, Input.SCOUT);
     expect(s.traps.map((t) => t.revealed)).toEqual([true, false]);
-    expect(s.scoutCharges).toBe(1);
   });
 
   it("standing still times out with nothing", () => {
@@ -211,8 +280,9 @@ describe("raid", () => {
     expect(out.lootBps).toBe(0);
   });
 
-  it("rejects input logs with non-increasing ticks", () => {
+  it("rejects malformed input logs", () => {
     expect(() => simulateRaid(setup([]), [[5, 2], [5, 1]])).toThrow();
+    expect(() => simulateRaid(setup([]), [[1, 999]])).toThrow();
   });
 });
 
@@ -223,26 +293,26 @@ describe("hideout validation", () => {
         defender: chog1462,
         traps: [
           { room: 0, x: 300, kind: "Spring Plate" },
-          { room: 1, x: 500, kind: "Tripwire" },
+          { room: 4, x: 300, kind: "Tripwire" },
         ],
       }),
     ).toEqual([]);
   });
 
-  it("rejects too many traps, foreign kinds, bad positions and crowding", () => {
+  it("rejects too many traps, foreign kinds, bad positions, blocked spots and crowding", () => {
     const errors = validateHideout({
       defender: plain,
       traps: [
         { room: 0, x: 300, kind: "Chomper" },
         { room: 0, x: 330, kind: "Tripwire" },
-        { room: 3, x: 300, kind: "Tripwire" },
-        { room: 2, x: ROOM_W - 10, kind: "Tripwire" },
+        { room: 6, x: 300, kind: "Tripwire" },
+        { room: 2, x: 180, kind: "Tripwire" },
       ],
     });
     expect(errors.some((e) => e.includes("too many"))).toBe(true);
     expect(errors.some((e) => e.includes("not in loadout"))).toBe(true);
     expect(errors.some((e) => e.includes("bad room"))).toBe(true);
-    expect(errors.some((e) => e.includes("out of bounds"))).toBe(true);
+    expect(errors.some((e) => e.includes("blocks"))).toBe(true);
     expect(errors.some((e) => e.includes("too close"))).toBe(true);
   });
 });

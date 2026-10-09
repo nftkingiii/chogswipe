@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { getAddress, verifyMessage, type Address, type Hex } from "viem";
 import { parseSiweMessage, validateSiweMessage } from "viem/siwe";
 import {
+  INPUT_MASK_MAX,
   RAID_TICKS,
   TICK_HZ,
   simulateRaid,
@@ -220,7 +221,7 @@ export async function buildApp(deps: AppDeps) {
     if (
       !Array.isArray(inputs) ||
       inputs.length > MAX_INPUTS ||
-      !inputs.every((e) => Array.isArray(e) && e.length === 2 && Number.isInteger(e[0]) && Number.isInteger(e[1]) && e[1] >= 0 && e[1] < 64)
+      !inputs.every((e) => Array.isArray(e) && e.length === 2 && Number.isInteger(e[0]) && Number.isInteger(e[1]) && e[1] >= 0 && e[1] <= INPUT_MASK_MAX)
     ) {
       throw new HttpError(400, "bad input log");
     }

@@ -26,9 +26,9 @@ const HOUSES: Record<number, { name: string; traits: Traits; traps: TrapPlacemen
     traits: { Tier: "Uncommon", Mouth: "Bubblegum", Eyes: "Happy", Aura: "Mint" },
     traps: [
       { room: 0, x: 420, kind: "Tripwire" },
-      { room: 1, x: 300, kind: "Gum Snare" },
-      { room: 1, x: 640, kind: "Tripwire" },
-      { room: 2, x: 500, kind: "Gum Snare" },
+      { room: 1, x: 760, kind: "Gum Snare" },
+      { room: 4, x: 640, kind: "Tripwire" },
+      { room: 5, x: 520, kind: "Gum Snare" },
     ],
   },
 };
