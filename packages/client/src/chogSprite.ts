@@ -97,13 +97,16 @@ export class ChogSprite {
     this.shadow = scene.add.ellipse(0, floorY + 6, 130, 22, 0x1c1618, 0.22);
     this.sprite = scene.add.image(0, 8, textureKey, "idle").setOrigin(0.5, 1).setScale(0.95);
     const parts: Phaser.GameObjects.GameObject[] = [this.sprite];
-    const e = eyeItem(traits.Eyes, traits.Head);
+    // Drawn-on trait items are off: they read as stickers on the hand-drawn sheet.
+    // Traits show through fur colour here and in full on the loadout screen.
+    const items = false;
+    const e = items ? eyeItem(traits.Eyes, traits.Head) : null;
     if (e) {
       this.eyesKey = bakeEyes(scene, e);
       this.eyes = scene.add.image(0, 0, `${this.eyesKey}_0`).setOrigin(60 / 160, 0.5);
       parts.push(this.eyes);
     }
-    const h = headItem(traits.Head);
+    const h = items ? headItem(traits.Head) : null;
     if (h) {
       this.hatKey = bakeHead(scene, h);
       this.hat = scene.add.image(0, 0, `${this.hatKey}_0`).setOrigin(0.5, 96 / 110);
