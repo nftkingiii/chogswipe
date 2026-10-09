@@ -139,7 +139,13 @@ export class LoadoutScene extends Phaser.Scene {
           padding: on ? { x: 8, y: 2 } : undefined,
         }),
       );
-      if (on) keep(this.add.text(876 + g.width + 12, y, `${kind}: ${GADGET_INFO[gadget!] ?? ""}`, { fontFamily: FONT_BODY, fontSize: "17px", color: "#5a4d50" }));
+      if (on) {
+        const d = keep(this.add.text(876 + g.width + 12, y + 1, GADGET_INFO[gadget!] ?? "", { fontFamily: FONT_BODY, fontSize: "16px", color: "#5a4d50" }));
+        // keep descriptions inside the panel
+        const room = 1212 - d.x;
+        if (d.width > room) d.setScale(Math.max(0.7, room / d.width), 1);
+        void kind;
+      }
     });
     void (l satisfies Loadout);
   }
