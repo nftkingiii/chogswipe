@@ -5,6 +5,9 @@ import { refereeSigner } from "./sign.js";
 import { MemoryStore, type Store } from "./store.js";
 import { PgStore } from "./pgStore.js";
 import pg from "pg";
+import fastifyStatic from "@fastify/static";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const config = loadConfig();
 
@@ -25,5 +28,9 @@ const app = await buildApp({
   chainId: config.chainId,
   allowedOrigin: config.allowedOrigin,
 });
+// serve the built game from the same origin, so wallet sign-in and the API share one domain
+const dist = fileURLToPath(new URL("../../client/dist", import.meta.url));
+if (existsSync(dist)) await app.register(fastifyStatic, { root: dist, prefix: "/" });
+
 await app.listen({ port: config.port, host: "0.0.0.0" });
 console.log(`referee listening on :${config.port}`);

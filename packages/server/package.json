@@ -12,6 +12,7 @@
   "dependencies": {
     "@chogswipe/sim": "workspace:*",
     "@fastify/cors": "^11.3.0",
+    "@fastify/static": "^10.1.5",
     "fastify": "^5.12.5",
     "pg": "^8.23.1",
     "viem": "^2.57.4"

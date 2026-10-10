@@ -5,7 +5,8 @@ import { createSiweMessage } from "viem/siwe";
 import { monad } from "./chain.js";
 import type { Wallet } from "./wallet.js";
 
-export const API = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8787";
+// dev: Vite on :5173 talks to the referee on :8787; production: the referee serves the game itself
+export const API = (import.meta.env.VITE_API_URL as string | undefined) ?? (import.meta.env.DEV ? "http://localhost:8787" : "");
 const TOKEN_KEY = "chogswipe.session";
 
 let token: string | null = null;
