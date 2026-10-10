@@ -5,6 +5,7 @@ import { bake, grain, ink, INK, PAPER } from "./art.js";
 import { cleared } from "./progress.js";
 import { DEMO_ROSTER, type RosterChog } from "./roster.js";
 import { themeFor } from "./theme.js";
+import { castReady, loadCast } from "./cast.js";
 import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel } from "./ui.js";
 
 // node positions along the path, left to right, winding up and down
@@ -37,6 +38,10 @@ export class MapScene extends Phaser.Scene {
   init(data: { chog?: RosterChog }) {
     this.chog = data.chog ?? DEMO_ROSTER[0]!;
     this.card = [];
+  }
+
+  preload() {
+    loadCast(this);
   }
 
   create() {
@@ -122,10 +127,14 @@ export class MapScene extends Phaser.Scene {
   private guide() {
     const tip = GUIDE_TIPS[Math.floor(Math.random() * GUIDE_TIPS.length)]!;
     panel(this, 40, 600, 600, 96, 0xfffaf0);
-    const frame = this.add.graphics();
-    frame.fillStyle(0x7e5ce0, 1).fillCircle(96, 648, 34);
-    frame.lineStyle(4, INK_N, 1).strokeCircle(96, 648, 34);
-    this.add.text(96, 648, "M", { fontFamily: FONT_TITLE, fontSize: "30px", color: PAPER }).setOrigin(0.5);
+    if (castReady(this)) {
+      this.add.image(96, 694, "cast", "molandak").setOrigin(0.5, 1).setScale(0.36);
+    } else {
+      const frame = this.add.graphics();
+      frame.fillStyle(0x7e5ce0, 1).fillCircle(96, 648, 34);
+      frame.lineStyle(4, INK_N, 1).strokeCircle(96, 648, 34);
+      this.add.text(96, 648, "M", { fontFamily: FONT_TITLE, fontSize: "30px", color: PAPER }).setOrigin(0.5);
+    }
     this.add.text(144, 614, "MOLANDAK SAYS", { fontFamily: FONT_TITLE, fontSize: "16px", color: "#7e5ce0" });
     this.add.text(144, 638, tip, { fontFamily: FONT_BODY, fontSize: "20px", color: INK, wordWrap: { width: 480 } });
   }

@@ -15,6 +15,8 @@ export interface Location {
   rooms: [string, string, string, string, string, string];
   loot: string; // what sits in the vault
   unlockAfter: string | null;
+  /** who patrols the kitchen: a Fwog bouncer or the location's monanimal */
+  guard: "fwog" | "molandak" | "moyaki" | "mouch" | "salmonad" | "mongrod";
 }
 
 export const HOUSE_BASE = 1_000_000;
@@ -35,6 +37,7 @@ export const LOCATIONS: Location[] = [
     rooms: ["Lounge", "Library", "Kitchen", "Study", "Bedroom", "Vault"],
     loot: "Dad's lily-pad savings",
     unlockAfter: null,
+    guard: "fwog",
   },
   {
     id: HOUSE_BASE + 1,
@@ -51,6 +54,7 @@ export const LOCATIONS: Location[] = [
     rooms: ["Gallery", "Sketch Room", "Snack Bar", "Glitch Lab", "Ink Room", "Sketch Safe"],
     loot: "the original Chog sketch",
     unlockAfter: "fwog-pond",
+    guard: "fwog",
   },
   {
     id: HOUSE_BASE + 2,
@@ -68,6 +72,7 @@ export const LOCATIONS: Location[] = [
     rooms: ["Shopfront", "Flour Store", "Ovens", "Pantry", "Proving Room", "Recipe Safe"],
     loot: "the secret dough recipe",
     unlockAfter: "rayj-studio",
+    guard: "moyaki",
   },
   {
     id: HOUSE_BASE + 3,
@@ -85,6 +90,7 @@ export const LOCATIONS: Location[] = [
     rooms: ["Leaf Pile", "Spider Larder", "Launch Pad", "Web Loft", "Tail-Wing Shop", "Prank Vault"],
     loot: "a jar of stolen leaves",
     unlockAfter: "moyaki-bakery",
+    guard: "mouch",
   },
   {
     id: HOUSE_BASE + 4,
@@ -103,6 +109,7 @@ export const LOCATIONS: Location[] = [
     rooms: ["Riverbank", "Posting Hall", "Altar", "Shallows", "Prophet's Den", "Shrine"],
     loot: "the first salmonpost",
     unlockAfter: "mouch-nest",
+    guard: "salmonad",
   },
   {
     id: HOUSE_BASE + 5,
@@ -121,6 +128,7 @@ export const LOCATIONS: Location[] = [
     rooms: ["Clock Hall", "Paradox Archive", "Engine Room", "Future Wing", "Past Wing", "Time Vault"],
     loot: "a paradox in a jar",
     unlockAfter: "salmonad-shrine",
+    guard: "molandak",
   },
   {
     id: HOUSE_BASE + 6,
@@ -140,6 +148,7 @@ export const LOCATIONS: Location[] = [
     rooms: ["Gate", "Barracks", "Forge", "Elder Roots", "Throne Room", "Heart of the Tree"],
     loot: "the heart of the Elder Tree",
     unlockAfter: "molandak-lab",
+    guard: "mongrod",
   },
 ];
 

@@ -28,6 +28,7 @@ import { ACCENT, BOIL_FRAMES, FLOOR_Y, INK, PAPER, ROOM_PX, SKIN, TRAP_H, VIEW_H
 import { DEMO_ROSTER, IMAGE_BASE, type RosterChog } from "./roster.js";
 import { LOCATIONS, loadoutFor, type Location } from "@chogswipe/sim";
 import { markCleared } from "./progress.js";
+import { castReady, loadCast } from "./cast.js";
 import { bakeFx } from "./puppet.js";
 import { ChogSprite, makeChogTexture } from "./chogSprite.js";
 import { WINDOWS, bakeForeground, bakeRooms, bakeSkyline } from "./rooms.js";
@@ -65,6 +66,9 @@ export class RaidScene extends Phaser.Scene {
   private trapSprites: Phaser.GameObjects.Image[] = [];
   private hunchSprites: Phaser.GameObjects.Image[] = [];
   private guard!: Phaser.GameObjects.Image;
+  private monGuard = false;
+  private hintsShown = new Set<string>();
+  private hint?: Phaser.GameObjects.Container;
   private door!: Phaser.GameObjects.Image;
 
   private hud!: {
@@ -91,7 +95,7 @@ export class RaidScene extends Phaser.Scene {
 
   init(data: { chog?: RosterChog; location?: Location }) {
     this.chog = data.chog ?? DEMO_ROSTER[0]!;
-    this.loc = data.location ?? LOCATIONS[0]!;
+    this.loc = data.location ?? LOCATIONS.find((l) => l.slug === params.get("heist")) ?? LOCATIONS[0]!;
     this.cap = 2_000 + LOCATIONS.indexOf(this.loc) * 1_000; // demo vault sizes until the house vaults are funded
     // reset per-run state when the scene is restarted
     this.acc = this.hitStop = this.seenEvents = this.boilT = this.boilFrame = 0;
@@ -101,11 +105,14 @@ export class RaidScene extends Phaser.Scene {
     this.skyPatches = [];
     this.roomImages = [];
     this.visited = new Set([0]);
+    this.hintsShown = new Set();
+    this.hint = undefined;
     this.bot = makeBot({ route: ROUTE, scout: true });
   }
 
   preload() {
     this.load.image("chog-sheet", "/sprites/chog.png");
+    loadCast(this);
     this.load.setCORS("anonymous");
     this.load.image(`portrait:${this.chog.id}`, IMAGE_BASE + this.chog.image);
   }
@@ -145,8 +152,14 @@ export class RaidScene extends Phaser.Scene {
     this.boil(this.add.image(worldX(VAULT_ROOM, VAULT_X) + 10, floorY(VAULT_ROOM) + 4, "vault_0").setOrigin(0.5, 1), "vault");
     this.door = this.add.image(colOf(LOCKED_DOOR.left) * ROOM_PX + ROOM_PX - 20, floorY(LOCKED_DOOR.left) + 2, "lockdoor_0").setOrigin(0.5, 1);
     this.boil(this.door, "lockdoor");
-    this.guard = this.add.image(0, floorY(GUARD.room) + 6, "guard_0").setOrigin(0.5, 1).setScale(0.9);
-    this.boil(this.guard, "guard");
+    // the location's monanimal patrols the kitchen; the Fwog bouncer stands in otherwise
+    this.monGuard = this.loc.guard !== "fwog" && castReady(this);
+    if (this.monGuard) {
+      this.guard = this.add.image(0, floorY(GUARD.room) + 10, "cast", this.loc.guard).setOrigin(0.5, 1).setScale(0.78);
+    } else {
+      this.guard = this.add.image(0, floorY(GUARD.room) + 6, "guard_0").setOrigin(0.5, 1).setScale(0.9);
+      this.boil(this.guard, "guard");
+    }
 
     this.s.traps.forEach((tr, i) => {
       const img = this.add.image(worldX(tr.room, tr.x), floorY(tr.room) + 8, `trap:${tr.kind}_0`).setOrigin(0.5, 1).setAlpha(0);
@@ -419,6 +432,46 @@ export class RaidScene extends Phaser.Scene {
     this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 320, ease: "Back.Out" });
   }
 
+  /** Molandak's tips: each shows once per raid, when it becomes useful. */
+  private hints(s: RaidState) {
+    if (s.result) return;
+    const near = (room: number, x: number, r: number) => s.room === room && !s.climb && Math.abs(s.x - x) <= r;
+    const rules: [string, boolean, string][] = [
+      ["start", s.t > 20, "The vault is upstairs. Press Q to scout this room for traps."],
+      ["stairs", (near(0, 820, 140) || near(2, 180, 140)) && s.lootBps === 0, "Press ↑ at the stairs to go up."],
+      ["guard", s.room === GUARD.room && !s.guardOut && s.lootBps === 0, "A guard! Jump over it with SPACE, or slip past when it turns."],
+      ["door", s.room === LOCKED_DOOR.left && s.x > ROOM_W - 220 && !s.doorOpen, "Locked. Hold F to pick it, or bring Rage Horns."],
+      ["vault", near(VAULT_ROOM, VAULT_X, 160) && s.lootBps === 0, "There it is. Hold F to swipe the loot!"],
+      ["home", s.lootBps > 0, "Now get out the front door before the clock runs out!"],
+    ];
+    for (const [key, when, text] of rules) {
+      if (when && !this.hintsShown.has(key)) {
+        this.hintsShown.add(key);
+        this.say(text);
+        break;
+      }
+    }
+  }
+
+  private say(text: string) {
+    const W = this.scale.width;
+    this.hint?.destroy();
+    const c = this.add.container(W / 2, 640).setScrollFactor(0).setDepth(100);
+    const bubble = this.add.graphics();
+    bubble.fillStyle(0x1c1618, 1).fillRoundedRect(-286, -42, 580, 84, 18);
+    bubble.fillStyle(0xfffaf0, 1).fillRoundedRect(-290, -46, 580, 84, 18);
+    bubble.lineStyle(4, 0x1c1618, 1).strokeRoundedRect(-290, -46, 580, 84, 18);
+    const parts: Phaser.GameObjects.GameObject[] = [bubble];
+    if (castReady(this)) parts.push(this.add.image(-246, 30, "cast", "molandak").setOrigin(0.5, 1).setScale(0.36));
+    parts.push(this.add.text(-196, -34, "MOLANDAK", { fontFamily: FONT_TITLE, fontSize: "16px", color: "#7e5ce0" }));
+    parts.push(this.add.text(-196, -12, text, { fontFamily: FONT_BODY, fontSize: "21px", color: INK, wordWrap: { width: 470 } }));
+    c.add(parts);
+    c.setAlpha(0).setY(670);
+    this.tweens.add({ targets: c, alpha: 1, y: 640, duration: 240, ease: "Back.Out" });
+    this.tweens.add({ targets: c, alpha: 0, delay: 3600, duration: 400, onComplete: () => c.destroy() });
+    this.hint = c;
+  }
+
   private toast(text: string, color: string, hold = 900) {
     const t = this.hud.toast;
     this.tweens.killTweensOf(t);
@@ -476,6 +529,11 @@ export class RaidScene extends Phaser.Scene {
 
     // guard patrol
     this.guard.setX(worldX(GUARD.room, guardX(s.t))).setFlipX(guardFacing(s.t) < 0);
+    if (this.monGuard) {
+      // bob while patrolling, topple when knocked out
+      this.guard.setAngle(s.guardOut ? 80 : Math.sin(s.t * 0.4) * 3).setAlpha(s.guardOut ? 0.7 : 1);
+    }
+    this.hints(s);
 
     s.traps.forEach((tr, i) => this.hunchSprites[i]!.setAlpha(tr.hunched && !tr.revealed && tr.armed ? 0.9 : 0));
 
