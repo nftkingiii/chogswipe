@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { finishLoader, startLoader } from "./loader.js";
 import { LoadoutScene } from "./loadoutScene.js";
 import { MapScene } from "./mapScene.js";
 import { RaidScene } from "./raidScene.js";
@@ -6,6 +7,8 @@ import { HideoutScene } from "./hideoutScene.js";
 import { PlayersScene } from "./playersScene.js";
 import { VaultScene } from "./vaultScene.js";
 import { HistoryScene } from "./historyScene.js";
+
+startLoader();
 
 async function start() {
   // Hand-drawn fonts are used inside canvas textures, so wait for them first.
@@ -22,6 +25,7 @@ async function start() {
       : [LoadoutScene, MapScene, RaidScene, PlayersScene, HideoutScene, VaultScene, HistoryScene],
   });
   (window as unknown as { game: Phaser.Game }).game = game;
+  finishLoader(game);
 }
 
 void start();
