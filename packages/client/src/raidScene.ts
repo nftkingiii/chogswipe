@@ -456,7 +456,7 @@ export class RaidScene extends Phaser.Scene {
   private say(text: string) {
     const W = this.scale.width;
     this.hint?.destroy();
-    const c = this.add.container(W / 2, 640).setScrollFactor(0).setDepth(100);
+    const c = this.add.container(W / 2 + 60, 548).setScrollFactor(0).setDepth(100);
     const bubble = this.add.graphics();
     bubble.fillStyle(0x1c1618, 1).fillRoundedRect(-286, -42, 580, 84, 18);
     bubble.fillStyle(0xfffaf0, 1).fillRoundedRect(-290, -46, 580, 84, 18);
@@ -466,8 +466,8 @@ export class RaidScene extends Phaser.Scene {
     parts.push(this.add.text(-196, -34, "MOLANDAK", { fontFamily: FONT_TITLE, fontSize: "16px", color: "#7e5ce0" }));
     parts.push(this.add.text(-196, -12, text, { fontFamily: FONT_BODY, fontSize: "21px", color: INK, wordWrap: { width: 470 } }));
     c.add(parts);
-    c.setAlpha(0).setY(670);
-    this.tweens.add({ targets: c, alpha: 1, y: 640, duration: 240, ease: "Back.Out" });
+    c.setAlpha(0).setY(578);
+    this.tweens.add({ targets: c, alpha: 1, y: 548, duration: 240, ease: "Back.Out" });
     this.tweens.add({ targets: c, alpha: 0, delay: 3600, duration: 400, onComplete: () => c.destroy() });
     this.hint = c;
   }
@@ -532,6 +532,9 @@ export class RaidScene extends Phaser.Scene {
     if (this.monGuard) {
       // bob while patrolling, topple when knocked out
       this.guard.setAngle(s.guardOut ? 80 : Math.sin(s.t * 0.4) * 3).setAlpha(s.guardOut ? 0.7 : 1);
+      // Mouch flies: hover above the floor unless knocked out
+      const hover = this.loc.guard === "mouch" && !s.guardOut ? -70 + Math.sin(s.t * 0.3) * 14 : 0;
+      this.guard.setY(floorY(GUARD.room) + 10 + hover);
     }
     this.hints(s);
 
