@@ -2,7 +2,7 @@
 import { loadoutFor } from "@chogswipe/sim";
 import { me, signIn, signOut, signedIn, type MyChog } from "./api.js";
 import { DEMO_ROSTER, IMAGE_BASE, type RosterChog } from "./roster.js";
-import { connectWallet, wallet } from "./wallet.js";
+import { connectWallet, disconnectWallet, wallet } from "./wallet.js";
 
 export interface PlayChog extends RosterChog {
   vault: { balance: string; shieldUntil: number } | null;
@@ -34,7 +34,12 @@ export const imageUrl = (c: RosterChog) => (c.image.startsWith("http") ? c.image
 
 /** Connect a wallet, sign in, and load the holder's Chogs. */
 export async function goLive(): Promise<void> {
-  const w = wallet() ?? (await connectWallet());
+  const w = wallet() ?? (await connectWallet(true));
+  // a saved sign-in only counts if it belongs to the account that's connected now
+  if (signedIn()) {
+    const who = await me().then((r) => r.address, () => null);
+    if (who?.toLowerCase() !== w.address.toLowerCase()) signOut();
+  }
   if (!signedIn()) await signIn(w);
   await refresh();
   session.address = w.address;
@@ -56,6 +61,7 @@ export async function refresh(): Promise<void> {
 
 export function goDemo() {
   signOut();
+  void disconnectWallet();
   Object.assign(session, { mode: "demo", address: null, chogs: demoChogs(), selected: 0 });
 }
 

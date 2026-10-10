@@ -2,10 +2,22 @@
 import Phaser from "phaser";
 import { goDemo, goLive, session } from "./session.js";
 import { notice, topNav } from "./ui.js";
+import { onAccountsChanged } from "./wallet.js";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
+let watching = false;
+
 export function nav(scene: Phaser.Scene, active: string) {
+  if (!watching) {
+    watching = true;
+    // switching accounts in the wallet signs this one out; the player reconnects as the new one
+    onAccountsChanged(() => {
+      if (session.mode !== "live") return;
+      goDemo();
+      for (const s of scene.game.scene.getScenes(true)) if (s.scene.key !== "raid") s.scene.restart();
+    });
+  }
   const live = session.mode === "live" && session.address;
   topNav(scene, active, {
     label: live ? short(session.address!) : "Connect wallet",
