@@ -23,9 +23,9 @@ export interface RaidRecord {
 /** Persistence for the referee. MemoryStore for local runs and tests; a Postgres store replaces it on deploy. */
 export interface Store {
   putNonce(nonce: string, expiresAt: number): Promise<void>;
-  takeNonce(nonce: string): Promise<boolean>;
+  takeNonce(nonce: string, now: number): Promise<boolean>;
   putSession(token: string, address: Address, expiresAt: number): Promise<void>;
-  getSession(token: string): Promise<Address | null>;
+  getSession(token: string, now: number): Promise<Address | null>;
   getLayout(tokenId: number): Promise<TrapPlacement[] | null>;
   putLayout(tokenId: number, traps: TrapPlacement[]): Promise<void>;
   putRaid(raid: RaidRecord): Promise<void>;
@@ -44,17 +44,17 @@ export class MemoryStore implements Store {
   async putNonce(nonce: string, expiresAt: number) {
     this.nonces.set(nonce, expiresAt);
   }
-  async takeNonce(nonce: string) {
+  async takeNonce(nonce: string, now: number) {
     const exp = this.nonces.get(nonce);
     this.nonces.delete(nonce);
-    return exp !== undefined && exp > Date.now();
+    return exp !== undefined && exp > now;
   }
   async putSession(token: string, address: Address, expiresAt: number) {
     this.sessions.set(token, { address, expiresAt });
   }
-  async getSession(token: string) {
+  async getSession(token: string, now: number) {
     const s = this.sessions.get(token);
-    return s && s.expiresAt > Date.now() ? s.address : null;
+    return s && s.expiresAt > now ? s.address : null;
   }
   async getLayout(tokenId: number) {
     return this.layouts.get(tokenId) ?? null;

@@ -126,6 +126,7 @@ export interface RaidState {
   doorWork: number;
   guardOut: boolean;
   guardCooldown: number;
+  blinkCooldown: number;
   prevMask: number;
   traps: TrapState[];
   events: RaidEvent[];
@@ -212,6 +213,7 @@ export function createRaid(setup: RaidSetup): RaidState {
     doorWork: 0,
     guardOut: false,
     guardCooldown: 0,
+    blinkCooldown: 0,
     prevMask: 0,
     traps: hideout.traps.map((tr) => ({ ...tr, armed: true, revealed: false, hunched: false })),
     events: [],
@@ -236,6 +238,7 @@ export function step(s: RaidState, setup: RaidSetup, mask: number): void {
   if (s.boost > 0) s.boost -= 1;
   if (s.invert > 0) s.invert -= 1;
   if (s.guardCooldown > 0) s.guardCooldown -= 1;
+  if (s.blinkCooldown > 0) s.blinkCooldown -= 1;
 
   if (s.climb) {
     s.climb.left -= 1;
@@ -447,7 +450,27 @@ function scout(s: RaidState, setup: RaidSetup): void {
   s.scoutCharges -= 1;
 }
 
+const BLINK_DIST = 220;
+const BLINK_COOLDOWN = 150;
+
+/** Blink (Body): a short teleport forward, on a cooldown. Stops at a closed locked door. */
+function blink(s: RaidState): boolean {
+  if (s.blinkCooldown > 0 || s.air > 0) return false;
+  let x = s.x + s.facing * BLINK_DIST;
+  if (!s.doorOpen && s.room === LOCKED_DOOR.left) x = Math.min(x, ROOM_W - DOOR_STOP);
+  if (!s.doorOpen && s.room === LOCKED_DOOR.right) x = Math.max(x, DOOR_STOP);
+  s.x = Math.max(0, Math.min(ROOM_W, x));
+  s.blinkCooldown = BLINK_COOLDOWN;
+  s.events.push({ t: s.t, type: "special", kind: "Blink" });
+  return true;
+}
+
 function special(s: RaidState, setup: RaidSetup): void {
+  // with no one-shot special to use, Blink bodies teleport instead
+  if (setup.raider.body === "Blink" && (!setup.raider.special || s.specialUsed || setup.raider.special === "Second Life")) {
+    blink(s);
+    return;
+  }
   const kind = setup.raider.special;
   if (!kind || s.specialUsed || kind === "Second Life") return;
   switch (kind) {
@@ -519,6 +542,10 @@ function triggerTraps(s: RaidState, setup: RaidSetup): void {
     }
     if (raider.body === "Costume Immunity" && tr.kind === "Slick Floor") {
       s.events.push({ t: s.t, type: "blocked", trap: i, by: "Costume Immunity" });
+      return;
+    }
+    if (raider.head === "Prank Card" && (tr.kind === "Jack-in-the-Box" || tr.kind === "Spring Plate")) {
+      s.events.push({ t: s.t, type: "blocked", trap: i, by: "Prank Card" });
       return;
     }
     if (raider.head === "Brim Shade" && tr.kind === "Jack-in-the-Box") {

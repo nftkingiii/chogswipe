@@ -58,7 +58,7 @@ export async function buildApp(deps: AppDeps) {
 
   async function auth(req: FastifyRequest): Promise<Address> {
     const token = req.headers.authorization?.replace(/^Bearer /, "");
-    const address = token ? await store.getSession(token) : null;
+    const address = token ? await store.getSession(token, now()) : null;
     if (!address) throw new HttpError(401, "sign in first");
     return address;
   }
@@ -100,7 +100,7 @@ export async function buildApp(deps: AppDeps) {
     ) {
       throw new HttpError(400, "invalid sign-in message");
     }
-    if (!(await store.takeNonce(parsed.nonce))) throw new HttpError(400, "nonce expired or used");
+    if (!(await store.takeNonce(parsed.nonce, now()))) throw new HttpError(400, "nonce expired or used");
     if (!(await verifyMessage({ address: parsed.address, message, signature }))) throw new HttpError(401, "bad signature");
     const token = randomBytes(32).toString("hex");
     await store.putSession(token, getAddress(parsed.address), now() + SESSION_MS);

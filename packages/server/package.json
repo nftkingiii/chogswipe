@@ -13,10 +13,13 @@
     "@chogswipe/sim": "workspace:*",
     "@fastify/cors": "^11.3.0",
     "fastify": "^5.12.5",
+    "pg": "^8.23.1",
     "viem": "^2.57.4"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
+    "@types/pg": "^8.23.1",
+    "pg-mem": "^3.0.14",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"

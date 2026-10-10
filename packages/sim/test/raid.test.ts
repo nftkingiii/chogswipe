@@ -330,3 +330,36 @@ describe("lore locations", () => {
     }
   });
 });
+
+describe("Blink and Prank Card", () => {
+  it("Blink teleports forward once per cooldown", () => {
+    const su = setup([], loadoutFor({ Tier: "Common", Body: "Wizard" }));
+    const s = createRaid(su);
+    s.x = 100;
+    step(s, su, Input.SPECIAL);
+    expect(s.x).toBe(320);
+    step(s, su, 0);
+    step(s, su, Input.SPECIAL);
+    expect(s.x).toBe(320); // still cooling down
+  });
+
+  it("Blink can't pass a closed locked door", () => {
+    const su = setup([], loadoutFor({ Tier: "Common", Body: "Wizard" }));
+    const s = createRaid(su);
+    s.room = 4;
+    s.x = ROOM_W - 200;
+    step(s, su, Input.SPECIAL);
+    expect(s.room).toBe(4);
+    expect(s.x).toBe(ROOM_W - DOOR_STOP);
+  });
+
+  it("Prank Card ignores Spring Plate and Jack-in-the-Box", () => {
+    const defender = loadoutFor({ Tier: "Common", Mouth: "Smile" });
+    const su = setup([{ room: 0, x: 300, kind: "Spring Plate" }], loadoutFor({ Tier: "Common", Head: "Clown Nose" }), defender);
+    const s = createRaid(su);
+    s.x = 300;
+    step(s, su, 0);
+    expect(s.events.some((e) => e.type === "blocked" && e.by === "Prank Card")).toBe(true);
+    expect(s.x).toBe(300);
+  });
+});

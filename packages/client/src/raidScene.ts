@@ -29,6 +29,7 @@ import { DEMO_ROSTER, IMAGE_BASE, type RosterChog } from "./roster.js";
 import { LOCATIONS, loadoutFor, type Location } from "@chogswipe/sim";
 import { markCleared } from "./progress.js";
 import { castReady, loadCast } from "./cast.js";
+import { isMuted, sfx, startMusic, stopMusic, toggleMute, unlockAudio } from "./sfx.js";
 import { finishRaid, type RaidStart, type SignedResult } from "./api.js";
 import { imageUrl, refresh } from "./session.js";
 import { settle } from "./tx.js";
@@ -72,6 +73,9 @@ export class RaidScene extends Phaser.Scene {
   private hunchSprites: Phaser.GameObjects.Image[] = [];
   private guard!: Phaser.GameObjects.Image;
   private monGuard = false;
+  private lastStepT = -1;
+  private touchMask = 0;
+  private lastJumpT = -1;
   private hintsShown = new Set<string>();
   private hint?: Phaser.GameObjects.Container;
   private door!: Phaser.GameObjects.Image;
@@ -216,6 +220,17 @@ export class RaidScene extends Phaser.Scene {
 
     const kb = this.input.keyboard!;
     this.keys = kb.addKeys("LEFT,RIGHT,UP,DOWN,A,D,W,S,SPACE,Q,E,F") as Record<string, Phaser.Input.Keyboard.Key>;
+    // sound starts on the first key or tap; M mutes
+    const start = () => {
+      unlockAudio();
+      startMusic();
+    };
+    kb.once("keydown", start);
+    if (this.sys.game.device.input.touch || params.has("touch")) this.touchControls();
+    this.input.once("pointerdown", start);
+    kb.on("keydown-M", () => this.toast(toggleMute() ? "Sound off" : "Sound on", PAPER));
+    this.events.once("shutdown", () => stopMusic());
+    if (!isMuted()) startMusic();
   }
 
   // ------------------------------------------------------------ building
@@ -376,7 +391,35 @@ export class RaidScene extends Phaser.Scene {
     if (k.Q!.isDown) m |= Input.SCOUT;
     if (k.E!.isDown) m |= Input.SPECIAL;
     if (k.F!.isDown) m |= Input.GRAB;
-    return m;
+    return m | this.touchMask;
+  }
+
+  /** On-screen buttons for phones and tablets. Each button holds its input bit while pressed. */
+  private touchControls() {
+    this.input.addPointer(3);
+    this.touchMask = 0;
+    const H = this.scale.height;
+    const W = this.scale.width;
+    const pad = (x: number, y: number, r: number, label: string, bit: number) => {
+      const c = this.add.circle(x, y, r, 0x1c1618, 0.55).setStrokeStyle(4, 0xf3eadb, 0.9).setScrollFactor(0).setDepth(150).setInteractive();
+      this.add.text(x, y, label, { fontFamily: FONT_TITLE, fontSize: `${Math.round(r * 0.55)}px`, color: PAPER }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
+      const on = () => ((this.touchMask |= bit), c.setFillStyle(0xe0528a, 0.8));
+      const off = () => ((this.touchMask &= ~bit), c.setFillStyle(0x1c1618, 0.55));
+      c.on("pointerdown", () => {
+        unlockAudio();
+        on();
+      });
+      c.on("pointerup", off);
+      c.on("pointerout", off);
+    };
+    pad(90, H - 200, 52, "◀", Input.LEFT);
+    pad(210, H - 200, 52, "▶", Input.RIGHT);
+    pad(150, H - 300, 40, "▲", Input.UP);
+    pad(150, H - 112, 40, "▼", Input.DOWN);
+    pad(W - 110, H - 200, 60, "JUMP", Input.JUMP);
+    pad(W - 240, H - 150, 44, "F", Input.GRAB);
+    pad(W - 240, H - 260, 40, "Q", Input.SCOUT);
+    pad(W - 120, H - 330, 40, "E", Input.SPECIAL);
   }
 
   private drainEvents() {
@@ -388,6 +431,7 @@ export class RaidScene extends Phaser.Scene {
     const cam = this.cameras.main;
     switch (e.type) {
       case "trap": {
+        sfx.trap(e.kind);
         this.hitStop = 90;
         if (e.kind === "Crybaby Alarm") this.puppet.sweat();
         cam.shake(180, 0.008);
@@ -399,6 +443,7 @@ export class RaidScene extends Phaser.Scene {
         break;
       }
       case "caught":
+        sfx.caught();
         this.hitStop = 120;
         cam.shake(220, 0.012);
         this.toast("SECURITY!", ACCENT);
@@ -408,6 +453,7 @@ export class RaidScene extends Phaser.Scene {
         this.toast("Guard knocked out", "#7ec4a8");
         break;
       case "door":
+        sfx.door(e.by === "Rage Horns");
         cam.shake(e.by === "Rage Horns" ? 260 : 120, e.by === "Rage Horns" ? 0.014 : 0.006);
         this.toast(e.by === "Rage Horns" ? "SMASHED THE DOOR" : "Door unlocked", "#7ec4a8");
         this.burst(this.door.x, this.door.y - 140, 0x8a5a3c, 10);
@@ -419,14 +465,17 @@ export class RaidScene extends Phaser.Scene {
         this.toast(`${e.by} blocked it`, "#7ec4a8");
         break;
       case "reveal":
+        sfx.scout();
         if (e.traps.length) this.toast(`${e.by}: ${e.traps.length} trap${e.traps.length > 1 ? "s" : ""} spotted`, "#f0c35a");
         e.traps.forEach((i) => this.tweens.add({ targets: this.trapSprites[i], alpha: 1, duration: 260 }));
         break;
       case "disarm":
+        sfx.disarm();
         this.toast(`${e.by}: disarmed`, "#7ec4a8");
         this.tweens.add({ targets: this.trapSprites[e.trap], alpha: 0.35, angle: 12, duration: 200 });
         break;
       case "grab":
+        sfx.grab();
         this.hitStop = 140;
         cam.shake(240, 0.01);
         this.toast(`SWIPED ${this.cap.toLocaleString()} $CHOG`, "#f0c35a");
@@ -442,6 +491,9 @@ export class RaidScene extends Phaser.Scene {
         this.toast(e.kind, "#7ec4a8");
         break;
       case "end":
+        stopMusic();
+        if (e.result === "escaped") sfx.win();
+        else sfx.lose();
         this.toast(e.result === "escaped" ? "ESCAPED!" : e.result === "knocked-out" ? "KNOCKED OUT" : "TIME'S UP", e.result === "escaped" ? "#f0c35a" : ACCENT, 1200);
         if (e.result === "escaped" && !this.live && !this.replay) markCleared(this.loc.slug);
         if (this.live) {
@@ -623,6 +675,15 @@ export class RaidScene extends Phaser.Scene {
       this.guard.setY(floorY(GUARD.room) + 10 + hover);
     }
     this.hints(s);
+    const moving = (s.prevMask & (Input.LEFT | Input.RIGHT)) !== 0 && !s.climb && s.stun === 0;
+    if (moving && s.air === 0 && s.t % 9 === 0 && s.t !== this.lastStepT) {
+      this.lastStepT = s.t;
+      sfx.step();
+    }
+    if (s.air === 18 && this.lastJumpT !== s.t) {
+      this.lastJumpT = s.t;
+      sfx.jump();
+    }
 
     s.traps.forEach((tr, i) => this.hunchSprites[i]!.setAlpha(tr.hunched && !tr.revealed && tr.armed ? 0.9 : 0));
 

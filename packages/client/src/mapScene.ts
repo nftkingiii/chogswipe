@@ -8,6 +8,7 @@ import { selectedChog } from "./session.js";
 import { nav } from "./nav.js";
 import { themeFor } from "./theme.js";
 import { castReady, loadCast } from "./cast.js";
+import { advance, onboardStep } from "./onboarding.js";
 import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel } from "./ui.js";
 
 // node positions along the path, left to right, winding up and down
@@ -127,7 +128,11 @@ export class MapScene extends Phaser.Scene {
 
   /** The guide's hint box. Molandak's art goes in the frame once the monanimal sheet is ready. */
   private guide() {
-    const tip = GUIDE_TIPS[Math.floor(Math.random() * GUIDE_TIPS.length)]!;
+    const first = onboardStep() === "heist";
+    const tip = first
+      ? "Start with The Fwog Pond: it's the easiest. Press Start heist, and I'll coach you inside."
+      : GUIDE_TIPS[Math.floor(Math.random() * GUIDE_TIPS.length)]!;
+    if (first) advance("done");
     panel(this, 40, 600, 600, 96, 0xfffaf0);
     if (castReady(this)) {
       this.add.image(96, 694, "cast", "molandak").setOrigin(0.5, 1).setScale(0.36);

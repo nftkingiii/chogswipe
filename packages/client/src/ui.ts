@@ -2,6 +2,7 @@
 import Phaser from "phaser";
 import { bake, grain, ink, INK, PAPER } from "./art.js";
 import { Input, type RaidState } from "@chogswipe/sim";
+import { sfx, unlockAudio } from "./sfx.js";
 
 export const FONT_TITLE = "'Luckiest Guy', sans-serif";
 export const FONT_BODY = "'Patrick Hand', sans-serif";
@@ -49,7 +50,11 @@ export function button(scene: Phaser.Scene, x: number, y: number, w: number, lab
   c.setSize(w, 56).setInteractive({ useHandCursor: true });
   c.on("pointerover", () => (draw(true), t.setY(2)));
   c.on("pointerout", () => (draw(false), t.setY(0)));
-  c.on("pointerdown", onClick);
+  c.on("pointerdown", () => {
+    unlockAudio();
+    sfx.click();
+    onClick();
+  });
   return c;
 }
 
@@ -78,6 +83,7 @@ export function poseState(pose: "idle" | "win" | "run", t: number): RaidState {
     doorWork: 0,
     guardOut: false,
     guardCooldown: 0,
+    blinkCooldown: 0,
     prevMask: pose === "run" ? Input.RIGHT : 0,
     traps: [],
     events: [],
@@ -152,4 +158,21 @@ export function notice(scene: Phaser.Scene, text: string, y = 360) {
     .setOrigin(0.5)
     .setDepth(200);
   return t;
+}
+
+/** A round copy of a loaded image (Phaser 4 geometry masks don't clip here), cached by key. */
+export function roundTexture(scene: Phaser.Scene, key: string, size = 128): string {
+  const out = `${key}:round`;
+  if (scene.textures.exists(out)) return out;
+  if (!scene.textures.exists(key)) return key;
+  const img = scene.textures.get(key).getSourceImage() as HTMLImageElement;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d")!;
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.drawImage(img, 0, 0, size, size);
+  scene.textures.addCanvas(out, c);
+  return out;
 }

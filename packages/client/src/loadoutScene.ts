@@ -8,7 +8,9 @@ import { bakeFx } from "./puppet.js";
 import type { RosterChog } from "./roster.js";
 import { imageUrl, selectChog, session } from "./session.js";
 import { nav } from "./nav.js";
-import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, poseState } from "./ui.js";
+import { advance, onboardStep } from "./onboarding.js";
+import { castReady, loadCast } from "./cast.js";
+import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, poseState, roundTexture } from "./ui.js";
 
 const TIER_COLOR: Record<string, string> = {
   Common: "#8a7d70",
@@ -40,6 +42,7 @@ export class LoadoutScene extends Phaser.Scene {
   preload() {
     this.load.setCORS("anonymous");
     this.load.image("chog-sheet", "/sprites/chog.png");
+    loadCast(this);
     for (const c of session.chogs) if (!this.textures.exists(`portrait:${c.id}`)) this.load.image(`portrait:${c.id}`, imageUrl(c));
   }
 
@@ -65,16 +68,31 @@ export class LoadoutScene extends Phaser.Scene {
       const y = 600;
       const g = this.add.graphics();
       this.cards.push(g);
-      const img = this.add.image(x + 48, y + 44, `portrait:${c.id}`).setDisplaySize(84, 84);
-      const mask = this.make.graphics({}).fillCircle(x + 48, y + 44, 42);
-      img.setMask(mask.createGeometryMask());
+      this.add.image(x + 48, y + 44, roundTexture(this, `portrait:${c.id}`)).setDisplaySize(86, 86);
       this.add.text(x + 48, y + 98, `#${c.id}`, { fontFamily: FONT_TITLE, fontSize: "18px", color: INK }).setOrigin(0.5, 0);
       const hit = this.add.zone(x, y - 4, 96, 130).setOrigin(0, 0).setInteractive({ useHandCursor: true });
       hit.on("pointerdown", () => this.select(i));
     });
 
-    button(this, W - 210, 650, 320, "Choose a heist →", () => this.scene.start("map", { chog: session.chogs[this.selected] }));
+    button(this, W - 210, 650, 320, "Choose a heist →", () => {
+      if (onboardStep() === "pick") advance("heist");
+      this.scene.start("map", { chog: session.chogs[this.selected] });
+    });
+    if (onboardStep() === "pick") this.welcome();
     this.select(this.selected);
+  }
+
+  /** First visit: Molandak explains the one thing to do here. */
+  private welcome() {
+    const g = this.add.graphics().setDepth(50);
+    g.fillStyle(0x1c1618, 1).fillRoundedRect(620 + 6, 588 + 6, 280, 110, 18);
+    g.fillStyle(0xfffaf0, 1).fillRoundedRect(620, 588, 280, 110, 18);
+    g.lineStyle(4, 0x1c1618, 1).strokeRoundedRect(620, 588, 280, 110, 18);
+    if (castReady(this)) this.add.image(664, 694, "cast", "molandak").setOrigin(0.5, 1).setScale(0.33).setDepth(51);
+    this.add.text(706, 598, "MOLANDAK", { fontFamily: FONT_TITLE, fontSize: "15px", color: "#7e5ce0" }).setDepth(51);
+    this.add
+      .text(706, 618, "Welcome, thief! Tap a Chog to see its gadgets, then choose a heist.", { fontFamily: FONT_BODY, fontSize: "17px", color: INK, wordWrap: { width: 186 } })
+      .setDepth(51);
   }
 
   private select(i: number) {
