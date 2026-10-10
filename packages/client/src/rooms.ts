@@ -91,7 +91,7 @@ function bakeRoom(scene: Phaser.Scene, room: number, theme: Theme) {
     }
     vignette(ctx, W, H);
     grain(ctx, W, H, 16, seed);
-  });
+  }, true);
 }
 
 function props(ctx: CanvasRenderingContext2D, rc: RC, seed: number, room: number, theme: Theme) {

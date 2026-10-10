@@ -30,8 +30,13 @@ export const ink = (seed: number, extra: Options = {}): Options => ({
   ...extra,
 });
 
-/** Draw `fn` into BOIL_FRAMES canvases and register them as Phaser textures key_0..key_n. */
-export function bake(scene: Phaser.Scene, key: string, w: number, h: number, fn: Draw) {
+/**
+ * Draw `fn` into BOIL_FRAMES canvases and register them as Phaser textures key_0..key_n.
+ * Textures are built once and shared across scenes; pass replace=true only for art that
+ * changes between uses (the heist rooms), and only from a scene that is (re)starting.
+ */
+export function bake(scene: Phaser.Scene, key: string, w: number, h: number, fn: Draw, replace = false) {
+  if (!replace && scene.textures.exists(`${key}_0`)) return;
   for (let f = 0; f < BOIL_FRAMES; f++) {
     const c = canvas(w, h);
     const ctx = c.getContext("2d", { willReadFrequently: true })!;

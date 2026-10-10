@@ -11,7 +11,8 @@
   "dependencies": {
     "@chogswipe/sim": "workspace:*",
     "phaser": "^4.2.1",
-    "roughjs": "^4.6.6"
+    "roughjs": "^4.6.6",
+    "viem": "^2.57.4"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

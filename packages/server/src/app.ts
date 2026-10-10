@@ -300,6 +300,7 @@ export async function buildApp(deps: AppDeps) {
       raids: raids.map((r) => ({
         raidId: r.id,
         raiderToken: r.raiderToken,
+        raider: (({ id, image, traits }) => ({ id, image: image ?? "", traits }))(chogInfo(r.raiderToken)!),
         startedAt: r.startedAt,
         seed: r.seed,
         traps: r.traps,

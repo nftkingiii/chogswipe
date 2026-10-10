@@ -84,3 +84,72 @@ export function poseState(pose: "idle" | "win" | "run", t: number): RaidState {
     result: pose === "win" ? "escaped" : null,
   };
 }
+
+// ------------------------------------------------------------ top navigation
+
+export const TABS: [key: string, label: string][] = [
+  ["loadout", "Chogs"],
+  ["map", "Heists"],
+  ["players", "Players"],
+  ["hideout", "Hideout"],
+  ["vault", "Vault"],
+  ["history", "History"],
+];
+
+/**
+ * Logo, workflow tabs and the wallet chip, shared by every menu screen.
+ * Tabs that need a signed-in holder stay visible and explain themselves when opened.
+ */
+export function topNav(scene: Phaser.Scene, active: string, wallet: { label: string; onClick: () => void }) {
+  const W = scene.scale.width;
+  scene.add.text(40, 22, "CHOGSWIPE", { fontFamily: FONT_TITLE, fontSize: "40px", color: INK });
+  let x = 312;
+  for (const [key, label] of TABS) {
+    const on = key === active;
+    const t = scene.add
+      .text(x, 30, label, {
+        fontFamily: FONT_TITLE,
+        fontSize: "20px",
+        color: on ? PAPER : INK,
+        backgroundColor: on ? "#1c1618" : undefined,
+        padding: { x: 12, y: 6 },
+      })
+      .setInteractive({ useHandCursor: true });
+    t.on("pointerdown", () => !on && scene.scene.start(key));
+    if (!on) {
+      t.on("pointerover", () => t.setColor("#e0528a"));
+      t.on("pointerout", () => t.setColor(INK));
+    }
+    x += t.width + 6;
+  }
+  const chip = scene.add
+    .text(W - 40, 30, wallet.label, {
+      fontFamily: FONT_TITLE,
+      fontSize: "18px",
+      color: PAPER,
+      backgroundColor: "#e0528a",
+      padding: { x: 14, y: 8 },
+    })
+    .setOrigin(1, 0)
+    .setInteractive({ useHandCursor: true });
+  chip.on("pointerdown", wallet.onClick);
+  return chip;
+}
+
+/** A short message overlay, used for errors and "sign in first" states. */
+export function notice(scene: Phaser.Scene, text: string, y = 360) {
+  const W = scene.scale.width;
+  const t = scene.add
+    .text(W / 2, y, text, {
+      fontFamily: FONT_BODY,
+      fontSize: "24px",
+      color: INK,
+      backgroundColor: "#fffaf0",
+      padding: { x: 20, y: 14 },
+      align: "center",
+      wordWrap: { width: 760 },
+    })
+    .setOrigin(0.5)
+    .setDepth(200);
+  return t;
+}

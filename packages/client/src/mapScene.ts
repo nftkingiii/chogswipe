@@ -3,7 +3,9 @@ import Phaser from "phaser";
 import { LOCATIONS, loadoutFor, type Location } from "@chogswipe/sim";
 import { bake, grain, ink, INK, PAPER } from "./art.js";
 import { cleared } from "./progress.js";
-import { DEMO_ROSTER, type RosterChog } from "./roster.js";
+import type { RosterChog } from "./roster.js";
+import { selectedChog } from "./session.js";
+import { nav } from "./nav.js";
 import { themeFor } from "./theme.js";
 import { castReady, loadCast } from "./cast.js";
 import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel } from "./ui.js";
@@ -36,7 +38,7 @@ export class MapScene extends Phaser.Scene {
   }
 
   init(data: { chog?: RosterChog }) {
-    this.chog = data.chog ?? DEMO_ROSTER[0]!;
+    this.chog = data.chog ?? selectedChog();
     this.card = [];
   }
 
@@ -71,9 +73,9 @@ export class MapScene extends Phaser.Scene {
     let f = 0;
     this.time.addEvent({ delay: 200, loop: true, callback: () => bg.setTexture(`jungle_${(f = (f + 1) % 3)}`) });
 
-    this.add.text(40, 26, "THE MONADVERSE HEISTS", { fontFamily: FONT_TITLE, fontSize: "44px", color: INK });
-    this.add.text(42, 78, `Raiding as Chog #${this.chog.id}. Clear a heist to unlock the next.`, { fontFamily: FONT_BODY, fontSize: "24px", color: "#3b3033" });
-    button(this, 1150, 60, 200, "Change Chog", () => this.scene.start("loadout", { chog: this.chog }), false);
+    nav(this, "map");
+    this.add.text(40, 96, "THE MONADVERSE HEISTS", { fontFamily: FONT_TITLE, fontSize: "34px", color: INK });
+    this.add.text(42, 136, `Raiding as Chog #${this.chog.id}. Clear a heist to unlock the next.`, { fontFamily: FONT_BODY, fontSize: "22px", color: "#3b3033" });
 
     const done = cleared();
     const unlocked = (l: Location) => !l.unlockAfter || done.has(l.unlockAfter);
@@ -108,7 +110,7 @@ export class MapScene extends Phaser.Scene {
   private showCard(loc: Location, i: number) {
     this.card.forEach((o) => o.destroy());
     const keep = <T extends Phaser.GameObjects.GameObject>(o: T) => (this.card.push(o), o);
-    const x = 990, y = 130, w = 270, h = 440;
+    const x = 990, y = 176, w = 270, h = 400;
     keep(panel(this, x, y, w, h));
     keep(this.add.text(x + 20, y + 18, `HEIST ${i + 1}`, { fontFamily: FONT_BODY, fontSize: "18px", color: "#8a7d70" }));
     keep(this.add.text(x + 20, y + 42, loc.name, { fontFamily: FONT_TITLE, fontSize: "26px", color: INK, wordWrap: { width: w - 40 } }));

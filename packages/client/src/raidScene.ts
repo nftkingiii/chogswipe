@@ -29,6 +29,11 @@ import { DEMO_ROSTER, IMAGE_BASE, type RosterChog } from "./roster.js";
 import { LOCATIONS, loadoutFor, type Location } from "@chogswipe/sim";
 import { markCleared } from "./progress.js";
 import { castReady, loadCast } from "./cast.js";
+import { finishRaid, type RaidStart, type SignedResult } from "./api.js";
+import { imageUrl, refresh } from "./session.js";
+import { settle } from "./tx.js";
+import { formatUnits } from "viem";
+import type { InputLog, Traits } from "@chogswipe/sim";
 import { bakeFx } from "./puppet.js";
 import { ChogSprite, makeChogTexture } from "./chogSprite.js";
 import { WINDOWS, bakeForeground, bakeRooms, bakeSkyline } from "./rooms.js";
@@ -93,10 +98,38 @@ export class RaidScene extends Phaser.Scene {
     super("raid");
   }
 
-  init(data: { chog?: RosterChog; location?: Location }) {
-    this.chog = data.chog ?? DEMO_ROSTER[0]!;
-    this.loc = data.location ?? LOCATIONS.find((l) => l.slug === params.get("heist")) ?? LOCATIONS[0]!;
-    this.cap = 2_000 + LOCATIONS.indexOf(this.loc) * 1_000; // demo vault sizes until the house vaults are funded
+  /** Live raid: the referee chose the seed and layout, and verifies our recorded inputs at the end. */
+  private live: { start: RaidStart; target: { id: number; name: string; traits: Traits } } | null = null;
+  /** Replay of a raid against one of our hideouts. */
+  private replay: { inputs: InputLog; seed: number; raider: RosterChog; name: string } | null = null;
+  private log: [number, number][] = [];
+  private lastMask = -1;
+  private signed: SignedResult | null = null;
+
+  init(data: {
+    chog?: RosterChog;
+    location?: Location;
+    live?: { start: RaidStart; target: { id: number; name: string; traits: Traits } };
+    replay?: { inputs: InputLog; seed: number; raider: RosterChog; name: string; defender: RosterChog; traps: Location["traps"] };
+  }) {
+    this.chog = data.replay?.raider ?? data.chog ?? DEMO_ROSTER[0]!;
+    this.live = data.live ?? null;
+    this.replay = data.replay ? { inputs: data.replay.inputs, seed: data.replay.seed, raider: data.replay.raider, name: data.replay.name } : null;
+    this.log = [];
+    this.lastMask = -1;
+    this.signed = null;
+    const house = this.live ? LOCATIONS.find((l) => l.id === this.live!.target.id) : undefined;
+    if (data.replay) {
+      const d = data.replay.defender;
+      this.loc = { ...LOCATIONS[0]!, id: d.id, slug: `chog-${d.id}`, name: data.replay.name, traits: d.traits, traps: data.replay.traps, rooms: [...ROOM_NAMES] as Location["rooms"], guard: "fwog", loot: "$CHOG" };
+    } else if (this.live && !house) {
+      const t = this.live.target;
+      this.loc = { ...LOCATIONS[0]!, id: t.id, slug: `chog-${t.id}`, name: t.name, traits: t.traits, traps: this.live.start.traps, rooms: [...ROOM_NAMES] as Location["rooms"], guard: "fwog", loot: "$CHOG" };
+    } else {
+      this.loc = house ?? data.location ?? LOCATIONS.find((l) => l.slug === params.get("heist")) ?? LOCATIONS[0]!;
+    }
+    // demo vault sizes until the house vaults are funded; live raids use the referee's cap
+    this.cap = this.live ? Math.floor(Number(formatUnits(BigInt(this.live.start.capAmount), 18))) : 2_000 + Math.max(0, LOCATIONS.indexOf(this.loc)) * 1_000;
     // reset per-run state when the scene is restarted
     this.acc = this.hitStop = this.seenEvents = this.boilT = this.boilFrame = 0;
     this.boilers = [];
@@ -114,15 +147,17 @@ export class RaidScene extends Phaser.Scene {
     this.load.image("chog-sheet", "/sprites/chog.png");
     loadCast(this);
     this.load.setCORS("anonymous");
-    this.load.image(`portrait:${this.chog.id}`, IMAGE_BASE + this.chog.image);
+    if (!this.textures.exists(`portrait:${this.chog.id}`)) this.load.image(`portrait:${this.chog.id}`, imageUrl(this.chog));
   }
 
   create() {
-    this.setup = {
-      seed: (Date.now() & 0xffff) ^ this.chog.id,
-      raider: loadoutFor(this.chog.traits),
-      hideout: { defender: loadoutFor(this.loc.traits), traps: this.loc.traps },
-    };
+    this.setup = this.live
+      ? { seed: this.live.start.seed, raider: this.live.start.raider, hideout: { defender: this.live.start.defender, traps: this.live.start.traps } }
+      : {
+          seed: this.replay?.seed ?? ((Date.now() & 0xffff) ^ this.chog.id),
+          raider: loadoutFor(this.chog.traits),
+          hideout: { defender: loadoutFor(this.loc.traits), traps: this.loc.traps },
+        };
     this.s = createRaid(this.setup);
 
     bakeRooms(this, themeFor(this.loc.traits.Background, this.loc.rooms));
@@ -206,7 +241,7 @@ export class RaidScene extends Phaser.Scene {
     );
     fixed(
       this.add
-        .text(W / 2, 30, AUTOPILOT ? "DEMO · AUTOPILOT" : "DEMO RAID", {
+        .text(W / 2, 30, this.replay ? "REPLAY" : this.live ? "LIVE RAID · MONAD" : AUTOPILOT ? "DEMO · AUTOPILOT" : "DEMO RAID", {
           fontFamily: FONT_BODY,
           fontSize: "16px",
           color: INK,
@@ -301,7 +336,12 @@ export class RaidScene extends Phaser.Scene {
       this.acc += delta;
       while (this.acc >= TICK_MS && !this.s.result && (FREEZE_AT === null || this.s.t < FREEZE_AT)) {
         this.acc -= TICK_MS;
-        step(this.s, this.setup, AUTOPILOT ? this.bot(this.s) : this.readKeys());
+        const mask = this.replay ? this.replayMask() : AUTOPILOT && !this.live ? this.bot(this.s) : this.readKeys();
+        if (mask !== this.lastMask) {
+          this.log.push([this.s.t, mask]); // the input log the referee replays
+          this.lastMask = mask;
+        }
+        step(this.s, this.setup, mask);
         this.drainEvents();
         if (this.hitStop > 0) break;
       }
@@ -314,6 +354,15 @@ export class RaidScene extends Phaser.Scene {
     if (b.img === this.door) return this.s.doorOpen ? "lockdoor-open" : "lockdoor";
     if (b.img === this.guard) return this.s.guardOut ? "guard-ko" : "guard";
     return b.key;
+  }
+
+  private replayIdx = 0;
+  private replayCur = 0;
+  /** Feed a recorded input log back in, tick by tick. */
+  private replayMask(): number {
+    const log = this.replay!.inputs;
+    while (this.replayIdx < log.length && log[this.replayIdx]![0] <= this.s.t) this.replayCur = log[this.replayIdx++]![1];
+    return this.replayCur;
   }
 
   private readKeys(): number {
@@ -394,8 +443,21 @@ export class RaidScene extends Phaser.Scene {
         break;
       case "end":
         this.toast(e.result === "escaped" ? "ESCAPED!" : e.result === "knocked-out" ? "KNOCKED OUT" : "TIME'S UP", e.result === "escaped" ? "#f0c35a" : ACCENT, 1200);
-        if (e.result === "escaped") markCleared(this.loc.slug);
-        this.time.delayedCall(700, () => this.resultCard(e.result));
+        if (e.result === "escaped" && !this.live && !this.replay) markCleared(this.loc.slug);
+        if (this.live) {
+          // the referee replays our inputs and signs the result if we escaped with loot
+          finishRaid(this.live.start.raidId, this.log)
+            .then((r) => {
+              this.signed = r.result;
+              this.resultCard(e.result);
+            })
+            .catch((err) => {
+              this.toast(`Referee: ${(err as Error).message}`, ACCENT, 4000);
+              this.resultCard(e.result);
+            });
+        } else {
+          this.time.delayedCall(700, () => this.resultCard(e.result));
+        }
         break;
     }
   }
@@ -425,9 +487,33 @@ export class RaidScene extends Phaser.Scene {
     const btn = this.add.graphics();
     btn.fillStyle(0xe0528a, 1).fillRoundedRect(-90, 74, 330, 58, 16);
     btn.lineStyle(4, 0x1c1618, 1).strokeRoundedRect(-90, 74, 330, 58, 16);
-    const cta = this.add.text(75, 103, "Back to the heists", { fontFamily: FONT_TITLE, fontSize: "26px", color: PAPER }).setOrigin(0.5);
-    btn.setInteractive(new Phaser.Geom.Rectangle(-90, 74, 330, 58), Phaser.Geom.Rectangle.Contains).on("pointerdown", () => this.scene.start("map", { chog: this.chog }));
-    const note = this.add.text(-270, 128, won ? `stole ${this.loc.loot} · demo vault` : "demo vault", { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70" });
+    const label = this.replay ? "Back to history" : this.signed ? "Settle on Monad" : this.live ? "Back to targets" : "Back to the heists";
+    const cta = this.add.text(75, 103, label, { fontFamily: FONT_TITLE, fontSize: "26px", color: PAPER }).setOrigin(0.5);
+    const noteText = this.replay
+      ? "replay of a raid on your hideout"
+      : this.live
+        ? this.signed
+          ? `signed by the referee · settle within 15 min · ${formatUnits(BigInt(this.signed.amount), 18)} $CHOG`
+          : "nothing to settle"
+        : won
+          ? `stole ${this.loc.loot} · demo vault`
+          : "demo vault";
+    const note = this.add.text(-270, 128, noteText, { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70" });
+    btn.setInteractive(new Phaser.Geom.Rectangle(-90, 74, 330, 58), Phaser.Geom.Rectangle.Contains).on("pointerdown", async () => {
+      if (this.replay) return this.scene.start("history");
+      if (!this.signed) return this.scene.start(this.live ? "players" : "map", { chog: this.chog });
+      cta.setText("Confirm in wallet…");
+      try {
+        const hash = await settle(this.signed);
+        note.setText(`settled on Monad · tx ${hash.slice(0, 10)}…`);
+        cta.setText("Back to targets");
+        this.signed = null;
+        await refresh().catch(() => undefined);
+      } catch (err) {
+        cta.setText("Settle on Monad");
+        note.setText(`not settled: ${(err as Error).message.split("\n")[0]}`);
+      }
+    });
     c.add([shade, card, head, title, amount, stats, btn, cta, note]);
     this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 320, ease: "Back.Out" });
   }

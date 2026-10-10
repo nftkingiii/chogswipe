@@ -5,7 +5,9 @@ import { INK, PAPER } from "./art.js";
 import { ChogSprite, makeChogTexture } from "./chogSprite.js";
 import { GADGET_INFO } from "./gadgetInfo.js";
 import { bakeFx } from "./puppet.js";
-import { DEMO_ROSTER, IMAGE_BASE, type RosterChog } from "./roster.js";
+import type { RosterChog } from "./roster.js";
+import { imageUrl, selectChog, session } from "./session.js";
+import { nav } from "./nav.js";
 import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, poseState } from "./ui.js";
 
 const TIER_COLOR: Record<string, string> = {
@@ -28,8 +30,8 @@ export class LoadoutScene extends Phaser.Scene {
   }
 
   init(data: { chog?: RosterChog }) {
-    const i = data.chog ? DEMO_ROSTER.findIndex((c) => c.id === data.chog!.id) : 0;
-    this.selected = Math.max(0, i);
+    if (data.chog) selectChog(data.chog.id);
+    this.selected = session.selected;
     this.preview = null;
     this.detail = [];
     this.cards = [];
@@ -38,7 +40,7 @@ export class LoadoutScene extends Phaser.Scene {
   preload() {
     this.load.setCORS("anonymous");
     this.load.image("chog-sheet", "/sprites/chog.png");
-    for (const c of DEMO_ROSTER) this.load.image(`portrait:${c.id}`, IMAGE_BASE + c.image);
+    for (const c of session.chogs) if (!this.textures.exists(`portrait:${c.id}`)) this.load.image(`portrait:${c.id}`, imageUrl(c));
   }
 
   create() {
@@ -46,14 +48,19 @@ export class LoadoutScene extends Phaser.Scene {
     bakeFx(this);
     const W = this.scale.width;
 
-    this.add.text(48, 34, "CHOGSWIPE", { fontFamily: FONT_TITLE, fontSize: "54px", color: INK });
-    this.add.text(52, 96, "Pick a Chog. Its traits become its gadgets.", { fontFamily: FONT_BODY, fontSize: "26px", color: "#5a4d50" });
-    this.add
-      .text(W - 48, 46, "DEMO ROSTER", { fontFamily: FONT_BODY, fontSize: "16px", color: INK, backgroundColor: "#f0c35a", padding: { x: 10, y: 3 } })
-      .setOrigin(1, 0);
+    nav(this, "loadout");
+    this.add.text(42, 100, session.mode === "live" ? "Your Chogs. Their traits become their gadgets." : "Pick a Chog. Its traits become its gadgets.", {
+      fontFamily: FONT_BODY,
+      fontSize: "24px",
+      color: "#5a4d50",
+    });
+    if (session.chogs.length === 0) {
+      this.add.text(W / 2, 360, "This wallet holds no Chogs yet.", { fontFamily: FONT_TITLE, fontSize: "30px", color: INK }).setOrigin(0.5);
+      return;
+    }
 
     // roster strip
-    DEMO_ROSTER.forEach((c, i) => {
+    session.chogs.slice(0, 8).forEach((c, i) => {
       const x = 60 + i * 112;
       const y = 600;
       const g = this.add.graphics();
@@ -66,12 +73,13 @@ export class LoadoutScene extends Phaser.Scene {
       hit.on("pointerdown", () => this.select(i));
     });
 
-    button(this, W - 210, 650, 320, "Choose a heist →", () => this.scene.start("map", { chog: DEMO_ROSTER[this.selected] }));
+    button(this, W - 210, 650, 320, "Choose a heist →", () => this.scene.start("map", { chog: session.chogs[this.selected] }));
     this.select(this.selected);
   }
 
   private select(i: number) {
     this.selected = i;
+    session.selected = i;
     this.cards.forEach((g, j) => {
       const x = 60 + j * 112;
       g.clear();
@@ -80,7 +88,7 @@ export class LoadoutScene extends Phaser.Scene {
     });
     this.detail.forEach((o) => o.destroy());
     this.detail = [];
-    const chog = DEMO_ROSTER[i]!;
+    const chog = session.chogs[i]!;
     const l = loadoutFor(chog.traits);
 
     // stage with the in-game Chog wearing its traits
