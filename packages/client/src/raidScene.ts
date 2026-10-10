@@ -550,7 +550,7 @@ export class RaidScene extends Phaser.Scene {
     const H = this.scale.height;
     const won = result === "escaped";
     const loot = Math.floor((this.cap * this.s.lootBps) / 10_000);
-    const c = this.add.container(W / 2, H / 2 + 20).setScrollFactor(0).setAlpha(0).setScale(0.9);
+    const c = this.add.container(W / 2, H / 2 + 20).setDepth(300).setAlpha(0).setScale(0.9);
     const shade = this.add.rectangle(0, -20, W, H, 0x1c1618, 0.55);
     const card = this.add.graphics();
     card.fillStyle(0xf3eadb, 1).fillRoundedRect(-300, -170, 600, 350, 26);
@@ -582,9 +582,12 @@ export class RaidScene extends Phaser.Scene {
           ? `swiped ${this.loc.loot}. ${crewQuip(this.loc.slug)}`
           : `${crewQuip(this.loc.slug, false)}`;
     const note = this.add.text(0, 136, noteText, { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70", align: "center", wordWrap: { width: 540 } }).setOrigin(0.5, 0);
-    btn.setInteractive(new Phaser.Geom.Rectangle(-90, 74, 330, 58), Phaser.Geom.Rectangle.Contains).on("pointerdown", async () => {
+    let busy = false;
+    const go = async () => {
+      if (busy) return;
       if (this.replay) return this.scene.start("history");
       if (!this.signed) return this.scene.start(this.live ? "players" : "map", { chog: this.chog });
+      busy = true;
       cta.setText("Confirm in wallet…");
       try {
         const hash = await settle(this.signed);
@@ -596,8 +599,16 @@ export class RaidScene extends Phaser.Scene {
         cta.setText("Settle on Monad");
         note.setText(`not settled: ${(err as Error).message.split("\n")[0]}`);
       }
-    });
-    c.add([shade, card, head, title, amount, stats, btn, cta, note]);
+      busy = false;
+    };
+    btn.setInteractive(new Phaser.Geom.Rectangle(-90, 74, 330, 58), Phaser.Geom.Rectangle.Contains).on("pointerdown", go);
+    btn.input!.cursor = "pointer";
+    this.input.keyboard?.on("keydown-ENTER", go);
+    // pin every child too, or the button's click area scrolls with the map while the card stays on screen
+    // (Phaser 4's setScrollFactor(x, y, true) skips children whose scroll factor is still the default)
+    const parts = [shade, card, head, title, amount, stats, btn, cta, note];
+    parts.forEach((o) => o.setScrollFactor(0));
+    c.add(parts).setScrollFactor(0);
     this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 320, ease: "Back.Out" });
   }
 
