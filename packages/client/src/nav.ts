@@ -1,7 +1,7 @@
 // The top bar for menu screens, wired to the session (demo vs signed-in holder).
 import Phaser from "phaser";
 import { goDemo, goLive, session } from "./session.js";
-import { notice, topNav } from "./ui.js";
+import { DESIGN_W, notice, topNav } from "./ui.js";
 import { onAccountsChanged } from "./wallet.js";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -39,7 +39,7 @@ export function nav(scene: Phaser.Scene, active: string) {
   });
   if (!live) {
     scene.add
-      .text(scene.scale.width - 40, 76, "DEMO · connect a wallet holding a Chog to play for real", {
+      .text(DESIGN_W - 40, 76, "DEMO · connect a wallet holding a Chog to play for real", {
         fontFamily: "'Patrick Hand', sans-serif",
         fontSize: "16px",
         color: "#1c1618",

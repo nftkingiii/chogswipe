@@ -9,7 +9,7 @@ import { nav } from "./nav.js";
 import { themeFor } from "./theme.js";
 import { castReady, loadCast } from "./cast.js";
 import { advance, onboardStep } from "./onboarding.js";
-import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel } from "./ui.js";
+import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, centerStage, panel, stageLeft } from "./ui.js";
 
 // node positions along the path, left to right, winding up and down
 const NODES: [number, number][] = [
@@ -48,18 +48,23 @@ export class MapScene extends Phaser.Scene {
   }
 
   create() {
+    centerStage(this);
     const { width: W, height: H } = this.scale;
-    bake(this, "jungle", W, H, (ctx, rc, s) => {
+    const ox = stageLeft(this);
+    // the jungle fills the whole screen; the path and the Elder Tree sit on the centred 1280 stage
+    bake(this, `jungle-${W}`, W, H, (ctx, rc, s) => {
       ctx.fillStyle = "#cfe0b4";
       ctx.fillRect(0, 0, W, H);
       // river
-      rc.path(`M -20 ${H * 0.86} C 300 ${H * 0.7}, 600 ${H * 0.98}, 1300 ${H * 0.8}`, ink(s, { stroke: "#7fc0d6", strokeWidth: 46, roughness: 2 }));
+      rc.path(`M -20 ${H * 0.86} C 300 ${H * 0.7}, 600 ${H * 0.98}, ${W + 20} ${H * 0.8}`, ink(s, { stroke: "#7fc0d6", strokeWidth: 46, roughness: 2 }));
       // trees and bushes
       for (let i = 0; i < 40; i++) {
         const x = (i * 157) % W;
         const y = 150 + ((i * 89) % (H - 220));
         rc.circle(x, y, 40 + (i % 5) * 12, ink(s + i, { fill: i % 3 ? "#8fbf6a" : "#6fa65a", fillStyle: "solid", strokeWidth: 3 }));
       }
+      ctx.save();
+      ctx.translate(ox, 0);
       // the Elder Tree at the end
       rc.rectangle(1010, 260, 60, 220, ink(s + 99, { fill: "#7a5638", fillStyle: "solid" }));
       rc.circle(1040, 220, 220, ink(s + 100, { fill: "#4f8a4a", fillStyle: "solid" }));
@@ -68,11 +73,12 @@ export class MapScene extends Phaser.Scene {
         const [x0, y0] = NODES[i]!, [x1, y1] = NODES[i + 1]!;
         rc.line(x0, y0, x1, y1, ink(s + 200 + i, { strokeWidth: 6, stroke: "#f3eadb", roughness: 2.4 }));
       }
+      ctx.restore();
       grain(ctx, W, H, 14, s);
     });
-    const bg = this.add.image(0, 0, "jungle_0").setOrigin(0, 0);
+    const bg = this.add.image(-ox, 0, `jungle-${W}_0`).setOrigin(0, 0);
     let f = 0;
-    this.time.addEvent({ delay: 200, loop: true, callback: () => bg.setTexture(`jungle_${(f = (f + 1) % 3)}`) });
+    this.time.addEvent({ delay: 200, loop: true, callback: () => bg.setTexture(`jungle-${W}_${(f = (f + 1) % 3)}`) });
 
     nav(this, "map");
     this.add.text(40, 96, "THE MONADVERSE HEISTS", { fontFamily: FONT_TITLE, fontSize: "34px", color: INK });

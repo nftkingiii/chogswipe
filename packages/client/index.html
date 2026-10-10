@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#1c1618" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Chogswipe</title>
     <meta name="description" content="A Spy vs Spy-style trap-and-raid game for Chog holders on Monad." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -15,9 +20,38 @@
         --accent: #e0528a;
         --gold: #f0c35a;
       }
-      html, body { margin: 0; height: 100%; background: var(--ink); overflow: hidden; }
-      body { display: grid; place-items: center; }
-      #game { width: 100vw; height: 100vh; }
+      html, body { margin: 0; height: 100%; background: var(--ink); overflow: hidden; overscroll-behavior: none; }
+      body { touch-action: none; -webkit-user-select: none; user-select: none; }
+      #game { width: 100vw; height: 100vh; height: 100dvh; }
+      #game canvas { display: block; }
+
+      /* phones held upright: ask for landscape */
+      #rotate {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: none;
+        place-items: center;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "Patrick Hand", sans-serif;
+        text-align: center;
+        padding: 24px;
+      }
+      #rotate .phone-icon {
+        width: 64px;
+        height: 110px;
+        margin: 0 auto 26px;
+        border: 6px solid var(--ink);
+        border-radius: 14px;
+        background: #fffaf0;
+        box-shadow: 5px 6px 0 var(--accent);
+        animation: tilt 2.2s ease-in-out infinite;
+      }
+      #rotate b { display: block; font-family: "Luckiest Guy", sans-serif; font-weight: normal; font-size: 30px; letter-spacing: 1px; }
+      #rotate span { display: block; margin-top: 8px; font-size: 21px; color: #5a4d50; }
+      @media (orientation: portrait) { html.phone #rotate { display: grid; } }
+      @keyframes tilt { 0%, 25% { transform: rotate(0); } 55%, 85% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
 
       /* ---------------------------------------------------------------- loader */
       #loader {
@@ -142,6 +176,13 @@
           <div class="molandak" aria-hidden="true"></div>
           <div><b>MOLANDAK SAYS</b><span id="loader-tip">Your Chog's traits are its gadgets. Check them before every heist.</span></div>
         </div>
+      </div>
+    </div>
+    <div id="rotate" role="alert">
+      <div>
+        <div class="phone-icon" aria-hidden="true"></div>
+        <b>TURN YOUR PHONE</b>
+        <span>Chogswipe plays sideways. Rotate to landscape, then tap to go full screen.</span>
       </div>
     </div>
     <div id="game"></div>

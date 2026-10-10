@@ -9,9 +9,21 @@ export const FONT_BODY = "'Patrick Hand', sans-serif";
 export const ACCENT_N = 0xe0528a;
 export const INK_N = 0x1c1618;
 
+/** Menu screens are laid out on a 1280×720 stage; wider screens get extra margin on both sides. */
+export const DESIGN_W = 1280;
+
+/** How far the stage sits from the left edge of a wider screen. */
+export const stageLeft = (scene: Phaser.Scene) => Math.round((scene.scale.width - DESIGN_W) / 2);
+
+/** Centre the 1280-wide menu stage on the screen. */
+export function centerStage(scene: Phaser.Scene) {
+  scene.cameras.main.setScroll(-stageLeft(scene), 0);
+}
+
 export function paperBackground(scene: Phaser.Scene) {
+  centerStage(scene);
   const { width: W, height: H } = scene.scale;
-  bake(scene, "menu-paper", W, H, (ctx, rc, s) => {
+  bake(scene, `menu-paper-${W}`, W, H, (ctx, rc, s) => {
     ctx.fillStyle = PAPER;
     ctx.fillRect(0, 0, W, H);
     // doodles in the margins
@@ -21,9 +33,9 @@ export function paperBackground(scene: Phaser.Scene) {
     }
     grain(ctx, W, H, 14, s);
   });
-  const bg = scene.add.image(0, 0, "menu-paper_0").setOrigin(0, 0);
+  const bg = scene.add.image(-stageLeft(scene), 0, `menu-paper-${W}_0`).setOrigin(0, 0);
   let f = 0;
-  scene.time.addEvent({ delay: 200, loop: true, callback: () => bg.setTexture(`menu-paper_${(f = (f + 1) % 3)}`) });
+  scene.time.addEvent({ delay: 200, loop: true, callback: () => bg.setTexture(`menu-paper-${W}_${(f = (f + 1) % 3)}`) });
   return bg;
 }
 
@@ -107,7 +119,7 @@ export const TABS: [key: string, label: string][] = [
  * Tabs that need a signed-in holder stay visible and explain themselves when opened.
  */
 export function topNav(scene: Phaser.Scene, active: string, wallet: { label: string; onClick: () => void }) {
-  const W = scene.scale.width;
+  const W = DESIGN_W;
   scene.add.text(40, 22, "CHOGSWIPE", { fontFamily: FONT_TITLE, fontSize: "40px", color: INK });
   let x = 312;
   for (const [key, label] of TABS) {
@@ -144,7 +156,7 @@ export function topNav(scene: Phaser.Scene, active: string, wallet: { label: str
 
 /** A short message overlay, used for errors and "sign in first" states. */
 export function notice(scene: Phaser.Scene, text: string, y = 360) {
-  const W = scene.scale.width;
+  const W = DESIGN_W;
   const t = scene.add
     .text(W / 2, y, text, {
       fontFamily: FONT_BODY,

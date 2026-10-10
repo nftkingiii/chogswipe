@@ -10,7 +10,7 @@ import { imageUrl, selectChog, session } from "./session.js";
 import { nav } from "./nav.js";
 import { advance, onboardStep } from "./onboarding.js";
 import { castReady, loadCast } from "./cast.js";
-import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, poseState, roundTexture } from "./ui.js";
+import { ACCENT_N, DESIGN_W, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, poseState, roundTexture } from "./ui.js";
 
 const TIER_COLOR: Record<string, string> = {
   Common: "#8a7d70",
@@ -49,7 +49,7 @@ export class LoadoutScene extends Phaser.Scene {
   create() {
     paperBackground(this);
     bakeFx(this);
-    const W = this.scale.width;
+    const W = DESIGN_W;
 
     nav(this, "loadout");
     this.add.text(42, 100, session.mode === "live" ? "Your Chogs. Their traits become their gadgets." : "Pick a Chog. Its traits become its gadgets.", {

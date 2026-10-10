@@ -1,0 +1,10 @@
+{
+  "name": "Chogswipe",
+  "short_name": "Chogswipe",
+  "description": "A Spy vs Spy-style trap-and-raid game for Chog holders on Monad.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1c1618",
+  "theme_color": "#1c1618"
+}
