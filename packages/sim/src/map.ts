@@ -25,8 +25,9 @@ export interface Link {
 }
 
 export const LINKS: readonly Link[] = [
-  { kind: "stairs", a: { room: 0, x: 820 }, b: { room: 3, x: 820 } },
-  { kind: "stairs", a: { room: 2, x: 180 }, b: { room: 5, x: 180 } },
+  // stairs rise diagonally: the foot (a) and the top landing (b) sit at different x
+  { kind: "stairs", a: { room: 0, x: 820 }, b: { room: 3, x: 440 } },
+  { kind: "stairs", a: { room: 2, x: 160 }, b: { room: 5, x: 540 } },
   { kind: "vent", a: { room: 1, x: 480 }, b: { room: 4, x: 480 } },
 ];
 

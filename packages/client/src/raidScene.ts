@@ -4,6 +4,7 @@ import {
   FLOORS,
   GUARD,
   Input,
+  LINKS,
   LOCKED_DOOR,
   RAID_TICKS,
   ROOMS,
@@ -41,6 +42,13 @@ import { WINDOWS, bakeForeground, bakeRooms, bakeSkyline } from "./rooms.js";
 import { themeFor } from "./theme.js";
 
 const TICK_MS = 1000 / TICK_HZ;
+
+/** A line from the Chog team after a lore heist. */
+const CREW = ["Benja", "Toad", "PingPing", "Venty", "RayJ"] as const;
+function crewQuip(slug: string, won = true): string {
+  const who = CREW[[...slug].reduce((a, c) => a + c.charCodeAt(0), 0) % CREW.length]!;
+  return won ? `${who} is going to want that back.` : `${who} saw the whole thing. Try again.`;
+}
 const BOIL_MS = 180;
 const params = new URLSearchParams(location.search);
 const AUTOPILOT = params.has("autopilot");
@@ -73,6 +81,9 @@ export class RaidScene extends Phaser.Scene {
   private hunchSprites: Phaser.GameObjects.Image[] = [];
   private guard!: Phaser.GameObjects.Image;
   private monGuard = false;
+  private frontDoor!: Phaser.GameObjects.Image;
+  private enterFade = { v: 0 };
+  private exiting = false;
   private lastStepT = -1;
   private touchMask = 0;
   private lastJumpT = -1;
@@ -214,6 +225,12 @@ export class RaidScene extends Phaser.Scene {
     this.boil(this.add.image(worldX(3, 940), floorY(3) + 40, "fgplant_0").setOrigin(0.5, 1).setDepth(5).setAlpha(0.95).setFlipX(true), "fgplant");
     this.motes();
 
+    // the front door: open as the Chog sneaks in, then swings shut
+    this.frontDoor = this.add.image(worldX(0, 0) + 70, floorY(0) + 4, "frontdoor-open_0").setOrigin(0.5, 1);
+    this.exiting = false;
+    this.enterFade = { v: 0 };
+    this.tweens.add({ targets: this.enterFade, v: 1, duration: 450, ease: "Quad.Out" });
+    this.time.delayedCall(900, () => this.frontDoor.setTexture("frontdoor_0"));
     this.puppet = new ChogSprite(this, "chog-raider", floorY(0), this.chog.traits);
     this.cameras.main.startFollow(this.puppet.root, true, 0.12, 0.12, 0, 140);
     this.buildHud();
@@ -226,7 +243,9 @@ export class RaidScene extends Phaser.Scene {
       startMusic();
     };
     kb.once("keydown", start);
-    if (this.sys.game.device.input.touch || params.has("touch")) this.touchControls();
+    // touch buttons appear on the first real touch (many laptops report touch support without being used that way)
+    if (params.has("touch")) this.touchControls();
+    else this.input.once("pointerdown", (p: Phaser.Input.Pointer) => p.wasTouch && this.touchControls());
     this.input.once("pointerdown", start);
     kb.on("keydown-M", () => this.toast(toggleMute() ? "Sound off" : "Sound on", PAPER));
     this.events.once("shutdown", () => stopMusic());
@@ -311,7 +330,7 @@ export class RaidScene extends Phaser.Scene {
   /** Dust drifting through the lamp light. */
   private motes() {
     const lamps: [number, number][] = [
-      [0, 600],
+      [0, 380],
       [3, 600],
       [5, 600],
     ];
@@ -491,11 +510,14 @@ export class RaidScene extends Phaser.Scene {
         this.toast(e.kind, "#7ec4a8");
         break;
       case "end":
+        this.hint?.destroy(); // the result card takes over
+        this.hint = undefined;
         stopMusic();
         if (e.result === "escaped") sfx.win();
         else sfx.lose();
         this.toast(e.result === "escaped" ? "ESCAPED!" : e.result === "knocked-out" ? "KNOCKED OUT" : "TIME'S UP", e.result === "escaped" ? "#f0c35a" : ACCENT, 1200);
         if (e.result === "escaped" && !this.live && !this.replay) markCleared(this.loc.slug);
+        if (e.result === "escaped") this.exitThroughDoor();
         if (this.live) {
           // the referee replays our inputs and signs the result if we escaped with loot
           finishRaid(this.live.start.raidId, this.log)
@@ -514,6 +536,15 @@ export class RaidScene extends Phaser.Scene {
     }
   }
 
+  /** Escaped: the door swings open and the Chog runs out into the night. */
+  private exitThroughDoor() {
+    this.exiting = true;
+    this.frontDoor.setTexture("frontdoor-open_0");
+    const root = this.puppet.root;
+    this.tweens.add({ targets: root, x: root.x - 70, scaleX: root.scaleX * 0.85, scaleY: root.scaleY * 0.85, alpha: 0, duration: 650, ease: "Quad.In" });
+    this.time.delayedCall(700, () => this.frontDoor.setTexture("frontdoor_0"));
+  }
+
   private resultCard(result: string) {
     const W = this.scale.width;
     const H = this.scale.height;
@@ -522,8 +553,8 @@ export class RaidScene extends Phaser.Scene {
     const c = this.add.container(W / 2, H / 2 + 20).setScrollFactor(0).setAlpha(0).setScale(0.9);
     const shade = this.add.rectangle(0, -20, W, H, 0x1c1618, 0.55);
     const card = this.add.graphics();
-    card.fillStyle(0xf3eadb, 1).fillRoundedRect(-300, -170, 600, 330, 26);
-    card.lineStyle(6, 0x1c1618, 1).strokeRoundedRect(-300, -170, 600, 330, 26);
+    card.fillStyle(0xf3eadb, 1).fillRoundedRect(-300, -170, 600, 350, 26);
+    card.lineStyle(6, 0x1c1618, 1).strokeRoundedRect(-300, -170, 600, 350, 26);
     const head = this.add.image(-190, 40, "chog-raider", won ? "win" : "ko").setOrigin(0.5, 1).setScale(0.75);
     const title = this.add.text(-90, -130, won ? "CLEAN SWIPE" : "CAUGHT", { fontFamily: FONT_TITLE, fontSize: "46px", color: won ? INK : ACCENT });
     const amount = this.add.text(-90, -70, won ? `+${loot.toLocaleString()} $CHOG` : "+0 $CHOG", { fontFamily: FONT_TITLE, fontSize: "40px", color: "#c79a2a" });
@@ -548,9 +579,9 @@ export class RaidScene extends Phaser.Scene {
           ? `signed by the referee · settle within 15 min · ${formatUnits(BigInt(this.signed.amount), 18)} $CHOG`
           : "nothing to settle"
         : won
-          ? `stole ${this.loc.loot} · demo vault`
-          : "demo vault";
-    const note = this.add.text(-270, 128, noteText, { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70" });
+          ? `swiped ${this.loc.loot}. ${crewQuip(this.loc.slug)}`
+          : `${crewQuip(this.loc.slug, false)}`;
+    const note = this.add.text(0, 136, noteText, { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70", align: "center", wordWrap: { width: 540 } }).setOrigin(0.5, 0);
     btn.setInteractive(new Phaser.Geom.Rectangle(-90, 74, 330, 58), Phaser.Geom.Rectangle.Contains).on("pointerdown", async () => {
       if (this.replay) return this.scene.start("history");
       if (!this.signed) return this.scene.start(this.live ? "players" : "map", { chog: this.chog });
@@ -576,7 +607,7 @@ export class RaidScene extends Phaser.Scene {
     const near = (room: number, x: number, r: number) => s.room === room && !s.climb && Math.abs(s.x - x) <= r;
     const rules: [string, boolean, string][] = [
       ["start", s.t > 20, "The vault is upstairs. Press Q to scout this room for traps."],
-      ["stairs", (near(0, 820, 140) || near(2, 180, 140)) && s.lootBps === 0, "Press ↑ at the stairs to go up."],
+      ["stairs", LINKS.some((l) => l.kind === "stairs" && near(l.a.room, l.a.x, 140)) && s.lootBps === 0, "Press ↑ at the foot of the stairs to go up."],
       ["guard", s.room === GUARD.room && !s.guardOut && s.lootBps === 0, "A guard! Jump over it with SPACE, or slip past when it turns."],
       ["door", s.room === LOCKED_DOOR.left && s.x > ROOM_W - 220 && !s.doorOpen, "Locked. Hold F to pick it, or bring Rage Horns."],
       ["vault", near(VAULT_ROOM, VAULT_X, 160) && s.lootBps === 0, "There it is. Hold F to swipe the loot!"],
@@ -662,8 +693,10 @@ export class RaidScene extends Phaser.Scene {
       fy = Phaser.Math.Linear(floorY(s.climb.from.room), floorY(s.climb.to.room), e);
       if (s.climb.kind === "vent") alpha = 0.15; // crawling inside the duct
     }
-    this.puppet.update(s, x, fy, this.game.loop.delta);
-    this.puppet.root.setAlpha(s.result === "knocked-out" ? 0.6 : alpha);
+    if (!this.exiting) {
+      this.puppet.update(s, x, fy, this.game.loop.delta);
+      this.puppet.root.setAlpha((s.result === "knocked-out" ? 0.6 : alpha) * this.enterFade.v);
+    }
 
     // guard patrol
     this.guard.setX(worldX(GUARD.room, guardX(s.t))).setFlipX(guardFacing(s.t) < 0);

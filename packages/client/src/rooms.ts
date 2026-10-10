@@ -47,6 +47,7 @@ const px = (x: number) => (x / ROOM_W) * ROOM_PX;
 export function bakeRooms(scene: Phaser.Scene, theme: Theme = DEFAULT_THEME) {
   for (let r = 0; r < 6; r++) bakeRoom(scene, r, theme);
   bakeLockedDoor(scene);
+  bakeFrontDoor(scene);
   bakeGuard(scene);
 }
 
@@ -98,9 +99,8 @@ function props(ctx: CanvasRenderingContext2D, rc: RC, seed: number, room: number
   switch (room) {
     case 0: // Lounge
       rug(rc, seed, 120, 520, "#c96a5a");
-      frame(rc, seed, 140, 160, 150, 120, "#6f8fb3", (x, y, w, h) => fwogDoodle(rc, seed + 40, x + w / 2, y + h / 2 + 8));
-      couch(rc, seed, 200);
-      lamp(rc, ctx, seed, 600);
+      frame(rc, seed, 290, 160, 140, 120, "#6f8fb3", (x, y, w, h) => fwogDoodle(rc, seed + 40, x + w / 2, y + h / 2 + 8));
+      couch(rc, seed, 180);
       break;
     case 1: // Library
       shelf(rc, seed, 90);
@@ -108,8 +108,8 @@ function props(ctx: CanvasRenderingContext2D, rc: RC, seed: number, room: number
       plant(rc, seed, 860);
       break;
     case 2: // Kitchen
-      counter(rc, ctx, seed, 380);
-      fridge(rc, seed, 800);
+      counter(rc, ctx, seed, 560);
+      fridge(rc, seed, 856);
       clock(rc, ctx, seed, 560, 170);
       break;
     case 3: // Study
@@ -133,9 +133,9 @@ function props(ctx: CanvasRenderingContext2D, rc: RC, seed: number, room: number
 
 /** Window panes per room (x, y, w, h). Panes are cut out so the night city behind shows through. */
 export const WINDOWS: Record<number, [number, number, number, number] | undefined> = {
-  0: [330, 150, 190, 150],
+  0: [60, 150, 170, 140],
   1: [380, 140, 180, 170],
-  2: [250, 140, 220, 140],
+  2: [640, 140, 150, 120],
   3: [660, 140, 190, 170],
   4: [220, 140, 180, 140],
 };
@@ -257,37 +257,84 @@ function drawLink(ctx: CanvasRenderingContext2D, rc: RC, seed: number, room: num
     else ctx.fillRect(x - 20, y + 30, 40, FLOOR_Y - y - 30);
     return;
   }
-  if (lower) {
-    // staircase rising to the right into the ceiling
-    const steps = 9;
-    const w = 26;
-    const h = (FLOOR_Y - 58) / steps;
-    const x0 = x - (steps * w) / 2;
-    ctx.fillStyle = "#7a5638";
-    ctx.beginPath();
-    ctx.moveTo(x0, FLOOR_Y);
-    for (let i = 0; i < steps; i++) {
-      ctx.lineTo(x0 + i * w, FLOOR_Y - (i + 1) * h);
-      ctx.lineTo(x0 + (i + 1) * w, FLOOR_Y - (i + 1) * h);
-    }
-    ctx.lineTo(x0 + steps * w, FLOOR_Y);
-    ctx.closePath();
-    ctx.fill();
-    for (let i = 0; i < steps; i++) {
-      rc.line(x0 + i * w, FLOOR_Y - (i + 1) * h, x0 + (i + 1) * w, FLOOR_Y - (i + 1) * h, ink(seed + 210 + i, { strokeWidth: 4 }));
-      rc.line(x0 + i * w, FLOOR_Y - i * h, x0 + i * w, FLOOR_Y - (i + 1) * h, ink(seed + 230 + i, { strokeWidth: 4 }));
-    }
-    rc.line(x0, FLOOR_Y - 90, x0 + steps * w, 58 - 20, ink(seed + 250, { strokeWidth: 5 })); // banister
-    arrowTag(ctx, x0 - 10, FLOOR_Y - 160, "UP");
-  } else {
-    // stairwell opening in the floor with a railing
-    ctx.fillStyle = "#1c1618";
-    ctx.fillRect(x - 120, FLOOR_Y, 240, 34);
-    rc.rectangle(x - 120, FLOOR_Y, 240, 34, ink(seed + 260, { strokeWidth: 4 }));
-    rc.line(x - 120, FLOOR_Y - 70, x + 120, FLOOR_Y - 70, ink(seed + 261, { strokeWidth: 5 }));
-    for (let i = -120; i <= 120; i += 40) rc.line(x + i, FLOOR_Y - 70, x + i, FLOOR_Y, ink(seed + 262 + i, { strokeWidth: 3 }));
-    arrowTag(ctx, x - 40, FLOOR_Y - 110, "DOWN");
+  const foot = px(l.a.x);
+  const top = px(l.b.x);
+  const dir = Math.sign(top - foot) || 1;
+  if (lower) drawStairs(ctx, rc, seed, foot, top, dir);
+  else drawStairwell(ctx, rc, seed, top, dir);
+}
+
+const STEPS = 12;
+const CEIL = 58;
+
+/** A real staircase: treads and risers rising from the foot to the ceiling, a stringer, rail and balusters. */
+function drawStairs(ctx: CanvasRenderingContext2D, rc: RC, seed: number, foot: number, top: number, dir: number) {
+  const w = Math.abs(top - foot) / STEPS;
+  const h = (FLOOR_Y - CEIL) / STEPS;
+  const sx = (i: number) => foot + dir * i * w;
+  // under-stair closet: the solid mass below the steps
+  ctx.fillStyle = "#6e4e34";
+  ctx.beginPath();
+  ctx.moveTo(foot, FLOOR_Y);
+  for (let i = 0; i < STEPS; i++) {
+    ctx.lineTo(sx(i), FLOOR_Y - (i + 1) * h);
+    ctx.lineTo(sx(i + 1), FLOOR_Y - (i + 1) * h);
   }
+  ctx.lineTo(top, FLOOR_Y);
+  ctx.closePath();
+  ctx.fill();
+  rc.line(foot + dir * w * 2, FLOOR_Y - 8, top - dir * 6, CEIL + h * 2, ink(seed + 300, { strokeWidth: 2, stroke: "rgba(28,22,24,0.35)" }));
+  // steps: riser face plus a lit tread on top
+  for (let i = 0; i < STEPS; i++) {
+    const x0 = Math.min(sx(i), sx(i + 1));
+    const yTop = FLOOR_Y - (i + 1) * h;
+    ctx.fillStyle = "#8a6242";
+    ctx.fillRect(x0, yTop, w, h);
+    ctx.fillStyle = "#c9976a";
+    ctx.fillRect(x0 - 3, yTop - 6, w + 6, 8);
+    rc.rectangle(x0 - 3, yTop - 6, w + 6, 8, ink(seed + 310 + i, { strokeWidth: 2.5, roughness: 0.8 }));
+    rc.line(sx(i), yTop + 2, sx(i), yTop + h, ink(seed + 330 + i, { strokeWidth: 3, roughness: 0.8 }));
+  }
+  // stringer along the underside
+  rc.line(foot - dir * 4, FLOOR_Y, top, CEIL + 4, ink(seed + 350, { strokeWidth: 6 }));
+  // handrail parallel to the stairs, balusters on every step
+  const railLift = 118;
+  const railY = (x: number) => FLOOR_Y - railLift - ((x - foot) / (top - foot)) * (FLOOR_Y - CEIL);
+  const railEnd = foot + (top - foot) * ((FLOOR_Y - railLift - CEIL) / (FLOOR_Y - CEIL));
+  for (let i = 0; i < STEPS; i++) {
+    const bx = sx(i) + dir * w * 0.5;
+    if ((bx - railEnd) * dir > 0) break;
+    rc.line(bx, FLOOR_Y - (i + 1) * h - 6, bx, railY(bx), ink(seed + 360 + i, { strokeWidth: 2.5, roughness: 0.6 }));
+  }
+  rc.line(foot, railY(foot), railEnd, CEIL, ink(seed + 380, { strokeWidth: 7, stroke: "#5a3a26", roughness: 0.8 }));
+  rc.line(foot, railY(foot) - 4, railEnd, CEIL - 4, ink(seed + 381, { strokeWidth: 2 }));
+  // newel post at the foot
+  const nx = foot - dir * 10;
+  rc.rectangle(nx - 11, FLOOR_Y - 140, 22, 140, ink(seed + 390, { fill: "#7a5638", fillStyle: "solid", strokeWidth: 3 }));
+  rc.circle(nx, FLOOR_Y - 148, 26, ink(seed + 391, { fill: "#c9976a", fillStyle: "solid", strokeWidth: 3 }));
+  arrowTag(ctx, nx - dir * 40 - 20, FLOOR_Y - 170, "UP");
+}
+
+/** The top of the stairs seen from upstairs: an opening in the floor with the last steps and a railing. */
+function drawStairwell(ctx: CanvasRenderingContext2D, rc: RC, seed: number, top: number, dir: number) {
+  const len = 200;
+  const x0 = Math.min(top - dir * len, top + dir * 20);
+  const x1 = Math.max(top - dir * len, top + dir * 20);
+  ctx.fillStyle = "#1c1618";
+  ctx.fillRect(x0, FLOOR_Y, x1 - x0, 130);
+  // the last steps disappearing down into the well
+  for (let i = 1; i <= 4; i++) {
+    const sx = top - dir * i * 40;
+    ctx.fillStyle = `rgba(201,151,106,${0.75 - i * 0.15})`;
+    ctx.fillRect(Math.min(sx, sx + dir * 40), FLOOR_Y + i * 22, 40, 7);
+  }
+  rc.rectangle(x0, FLOOR_Y, x1 - x0, 130, ink(seed + 400, { strokeWidth: 4 }));
+  // railing along the well
+  rc.line(x0, FLOOR_Y - 80, x1, FLOOR_Y - 80, ink(seed + 401, { strokeWidth: 6, stroke: "#5a3a26" }));
+  for (let x = x0; x <= x1 + 1; x += 34) rc.line(x, FLOOR_Y - 80, x, FLOOR_Y, ink(seed + 402 + x, { strokeWidth: 2.5 }));
+  rc.rectangle(x0 - 10, FLOOR_Y - 104, 20, 104, ink(seed + 450, { fill: "#7a5638", fillStyle: "solid", strokeWidth: 3 }));
+  rc.rectangle(x1 - 10, FLOOR_Y - 104, 20, 104, ink(seed + 451, { fill: "#7a5638", fillStyle: "solid", strokeWidth: 3 }));
+  arrowTag(ctx, (x0 + x1) / 2 - 30, FLOOR_Y - 96, "DOWN");
 }
 
 function arrowTag(ctx: CanvasRenderingContext2D, x: number, y: number, label: string) {
@@ -384,6 +431,35 @@ function bakeLockedDoor(scene: Phaser.Scene) {
         [6, 264],
       ],
       ink(s, { fill: "#6b2a2a", fillStyle: "solid", strokeWidth: 4 }),
+    );
+  });
+}
+
+/** The hideout's front door in the Lounge: closed, and swung open. */
+function bakeFrontDoor(scene: Phaser.Scene) {
+  bake(scene, "frontdoor", 120, 270, (_ctx, rc, s) => {
+    rc.rectangle(6, 6, 108, 264, ink(s, { fill: "#2a2124", fillStyle: "solid", strokeWidth: 5 }));
+    rc.rectangle(16, 16, 88, 254, ink(s + 1, { fill: "#8a5a3c", fillStyle: "solid", strokeWidth: 4 }));
+    rc.rectangle(28, 34, 64, 80, ink(s + 2, { strokeWidth: 3 }));
+    rc.rectangle(28, 140, 64, 110, ink(s + 3, { strokeWidth: 3 }));
+    rc.circle(88, 140, 14, ink(s + 4, { fill: "#f0c35a", fillStyle: "solid", strokeWidth: 2 }));
+    rc.rectangle(40, 58, 40, 14, ink(s + 5, { fill: "#f3eadb", fillStyle: "solid", strokeWidth: 2 }));
+  });
+  bake(scene, "frontdoor-open", 120, 270, (ctx, rc, s) => {
+    // night outside the open doorway, the door swung against the wall
+    ctx.fillStyle = "#1d1438";
+    ctx.fillRect(10, 10, 100, 258);
+    ctx.fillStyle = "#f6d27a";
+    ctx.fillRect(70, 60, 10, 12);
+    rc.rectangle(6, 6, 108, 264, ink(s, { strokeWidth: 5 }));
+    rc.polygon(
+      [
+        [8, 10],
+        [40, 30],
+        [40, 250],
+        [8, 268],
+      ],
+      ink(s + 1, { fill: "#8a5a3c", fillStyle: "solid", strokeWidth: 4 }),
     );
   });
 }

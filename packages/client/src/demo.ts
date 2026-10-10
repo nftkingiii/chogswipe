@@ -33,7 +33,7 @@ export function demoSetup(seed = 7): RaidSetup {
         { room: 0, x: 420, kind: "Tripwire" },
         { room: 1, x: 760, kind: "Gum Snare" },
         { room: 4, x: 640, kind: "Tripwire" },
-        { room: 5, x: 520, kind: "Gum Snare" },
+        { room: 5, x: 300, kind: "Gum Snare" },
       ],
     },
   };

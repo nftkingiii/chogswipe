@@ -111,18 +111,23 @@ export class MapScene extends Phaser.Scene {
   private showCard(loc: Location, i: number) {
     this.card.forEach((o) => o.destroy());
     const keep = <T extends Phaser.GameObjects.GameObject>(o: T) => (this.card.push(o), o);
-    const x = 990, y = 176, w = 270, h = 400;
+    const x = 990, y = 150, w = 270, h = 446;
     keep(panel(this, x, y, w, h));
     keep(this.add.text(x + 20, y + 18, `HEIST ${i + 1}`, { fontFamily: FONT_BODY, fontSize: "18px", color: "#8a7d70" }));
-    keep(this.add.text(x + 20, y + 42, loc.name, { fontFamily: FONT_TITLE, fontSize: "26px", color: INK, wordWrap: { width: w - 40 } }));
-    keep(this.add.text(x + 20, y + 108, loc.blurb, { fontFamily: FONT_BODY, fontSize: "18px", color: "#3b3033", wordWrap: { width: w - 40 } }));
+    // each block sits under the one above it, so long names or blurbs never slide under the button
+    const title = keep(this.add.text(x + 20, y + 42, loc.name, { fontFamily: FONT_TITLE, fontSize: "24px", color: INK, wordWrap: { width: w - 40 } }));
+    const blurb = keep(
+      this.add.text(x + 20, title.y + title.height + 10, loc.blurb, { fontFamily: FONT_BODY, fontSize: "17px", color: "#3b3033", wordWrap: { width: w - 40 } }),
+    );
     const d = loadoutFor(loc.traits);
     const facts = [
       `Defender: ${d.tier}`,
       `Traps: ${loc.traps.length} · mostly ${d.trap}`,
       `Loot: ${loc.loot}`,
     ];
-    keep(this.add.text(x + 20, y + 268, facts.join("\n"), { fontFamily: FONT_BODY, fontSize: "18px", color: INK, lineSpacing: 6, wordWrap: { width: w - 40 } }));
+    keep(
+      this.add.text(x + 20, blurb.y + blurb.height + 14, facts.join("\n"), { fontFamily: FONT_BODY, fontSize: "17px", color: INK, lineSpacing: 4, wordWrap: { width: w - 40 } }),
+    );
     keep(button(this, x + w / 2, y + h - 46, w - 40, "Start heist", () => this.scene.start("raid", { chog: this.chog, location: loc })));
   }
 

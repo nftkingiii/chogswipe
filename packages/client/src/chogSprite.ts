@@ -86,6 +86,8 @@ export class ChogSprite {
   private wasAir = false;
   private lastStep = 0;
   private won = false;
+  private lastFacing: 1 | -1 = 1;
+  private turnT = 0;
   private readonly hat: Phaser.GameObjects.Image | null = null;
   private readonly eyes: Phaser.GameObjects.Image | null = null;
   private hatKey = "";
@@ -146,10 +148,12 @@ export class ChogSprite {
     if (s.result === "knocked-out") return "ko";
     if (this.won || s.result === "escaped") return "win";
     if (s.stun > 0) return "stunned";
+    // climbing stairs: step up with the run frames (carrying the sack if we have it)
+    if (s.climb && s.climb.kind === "stairs") return s.lootBps > 0 ? "carry" : Math.floor(s.t / 5) % 2 === 0 ? "run1" : "run2";
     if (s.air > 0 || s.climb) return "jump";
     const moving = (s.prevMask & (Input.LEFT | Input.RIGHT)) !== 0;
     if (s.lootBps > 0) return "carry";
-    if (moving) return Math.floor(s.t / 5) % 2 === 0 ? "run1" : "run2";
+    if (moving) return Math.floor(s.t / 4) % 2 === 0 ? "run1" : "run2";
     return "idle";
   }
 
@@ -158,7 +162,18 @@ export class ChogSprite {
     const t = s.t;
     const moving = (s.prevMask & (Input.LEFT | Input.RIGHT)) !== 0 && s.stun === 0;
     const airY = s.air > 0 ? -Math.sin((s.air / 18) * Math.PI) * 120 : 0;
-    const bob = moving && s.air === 0 ? -Math.abs(Math.sin(t * 0.63)) * 8 : pose === "idle" ? Math.sin(t * 0.12) * 1.5 : 0;
+    // bounce once per footfall (frames swap every 4 ticks), a smaller step-bob on the stairs
+    const climbing = !!s.climb && s.climb.kind === "stairs";
+    const bob =
+      climbing ? -Math.abs(Math.sin((t * Math.PI) / 5)) * 7 :
+      moving && s.air === 0 ? -Math.abs(Math.sin((t * Math.PI) / 4)) * 12 :
+      pose === "idle" ? Math.sin(t * 0.12) * 1.5 : 0;
+    // squash when turning around
+    if (s.facing !== this.lastFacing) {
+      this.turnT = 6;
+      this.lastFacing = s.facing;
+    }
+    if (this.turnT > 0) this.turnT -= 1;
     const hop = pose === "win" ? -Math.abs(Math.sin(t * 0.25)) * 50 : 0;
 
     const landing = this.wasAir && s.air === 0;
@@ -171,15 +186,18 @@ export class ChogSprite {
 
     this.sprite.setFrame(pose);
     // the sheet faces right; flip for left
-    this.sprite.setFlipX(s.facing < 0);
+    this.sprite.setFlipX((climbing ? Math.sign(s.climb!.to.x - s.climb!.from.x) || s.facing : s.facing) < 0);
     // squash and stretch
     const land = this.landT / 8;
-    const sx = pose === "jump" ? 0.92 : 1 + land * 0.18;
-    const sy = pose === "jump" ? 1.08 : 1 - land * 0.16;
+    const stride = moving && s.air === 0 ? Math.abs(Math.cos((t * Math.PI) / 4)) : 0; // 1 at each footfall
+    const turn = this.turnT / 6;
+    const sx = pose === "jump" ? 0.92 : 1 + land * 0.18 + stride * 0.05 - turn * 0.25;
+    const sy = pose === "jump" ? 1.08 : 1 - land * 0.16 - stride * 0.05 + turn * 0.06;
     this.sprite.setScale(0.95 * sx, 0.95 * sy);
     this.sprite.setRotation(
       pose === "stunned" ? Math.sin(t * 0.5) * 0.06 :
-      moving ? s.facing * 0.05 :
+      climbing ? (Math.sign(s.climb!.to.x - s.climb!.from.x) || 1) * -0.12 :
+      moving ? s.facing * (0.08 + (s.boost > 0 ? 0.06 : 0)) :
       0,
     );
 
@@ -192,7 +210,7 @@ export class ChogSprite {
       if (this.eyes) this.eyes.setTexture(`${this.eyesKey}_${f}`);
     }
 
-    if (moving && s.air === 0 && t - this.lastStep >= 8) {
+    if (moving && s.air === 0 && t - this.lastStep >= 4) {
       this.lastStep = t;
       this.puff(worldX - s.facing * 40, floorY - 6, 0.6);
     }

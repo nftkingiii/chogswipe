@@ -1,8 +1,11 @@
 // A simple autopilot that plays a raid by following a route of waypoints.
 // Used for demos and tests; real players send their own inputs.
-import { COLS, LOCKED_DOOR, ROOM_W, VAULT_ROOM, VAULT_X, colOf, floorOf } from "./map.js";
+import { COLS, LINKS, LOCKED_DOOR, ROOM_W, VAULT_ROOM, VAULT_X, colOf, floorOf } from "./map.js";
 import { GUARD } from "./map.js";
 import { DOOR_STOP, Input, guardX, type RaidState } from "./raid.js";
+
+const LOUNGE = LINKS[0]!;
+const KITCHEN = LINKS[1]!;
 
 type Step =
   | { go: [room: number, x: number] }
@@ -14,24 +17,24 @@ export type Route = "kitchen" | "upstairs";
 const ROUTES: Record<Route, Step[]> = {
   // straight through the guarded kitchen, up the back stairs to the vault
   kitchen: [
-    { go: [2, 180] },
+    { go: [KITCHEN.a.room, KITCHEN.a.x] },
     { climb: "up" },
     { go: [VAULT_ROOM, VAULT_X] },
     { grab: "vault" },
-    { go: [VAULT_ROOM, 180] },
+    { go: [KITCHEN.b.room, KITCHEN.b.x] },
     { climb: "down" },
     { go: [0, 0] },
   ],
   // up the lounge stairs, through the locked bedroom door
   upstairs: [
-    { go: [0, 820] },
+    { go: [LOUNGE.a.room, LOUNGE.a.x] },
     { climb: "up" },
     { go: [LOCKED_DOOR.left, ROOM_W - DOOR_STOP] },
     { grab: "door" },
     { go: [VAULT_ROOM, VAULT_X] },
     { grab: "vault" },
-    { go: [LOCKED_DOOR.left, 820] },
-    { go: [3, 820] },
+    { go: [LOCKED_DOOR.left, 300] },
+    { go: [LOUNGE.b.room, LOUNGE.b.x] },
     { climb: "down" },
     { go: [0, 0] },
   ],

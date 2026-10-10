@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  CLIMB_TICKS,
   DOOR_STOP,
   GUARD,
   Input,
@@ -134,11 +135,12 @@ describe("map routes", () => {
   it("stairs take the raider between floors", () => {
     const su = setup([]);
     const s = createRaid(su);
-    s.room = 2;
-    s.x = 180;
+    s.room = LINKS[1]!.a.room;
+    s.x = LINKS[1]!.a.x;
     step(s, su, Input.UP);
     expect(s.climb).not.toBeNull();
-    for (let i = 0; i < 30; i++) step(s, su, 0);
+    for (let i = 0; i < CLIMB_TICKS + 5; i++) step(s, su, 0);
+    expect(s.x).toBe(LINKS[1]!.b.x);
     expect(s.room).toBe(VAULT_ROOM);
   });
 });
@@ -195,7 +197,7 @@ describe("raid", () => {
   it("matches the live step-by-step run", () => {
     const su = setup([
       { room: 0, x: 300, kind: "Tripwire" },
-      { room: 5, x: 500, kind: "Crybaby Alarm" },
+      { room: 5, x: 300, kind: "Crybaby Alarm" },
     ]);
     const live = createRaid(su);
     const bot = makeBot();
@@ -307,7 +309,7 @@ describe("hideout validation", () => {
         { room: 0, x: 300, kind: "Chomper" },
         { room: 0, x: 330, kind: "Tripwire" },
         { room: 6, x: 300, kind: "Tripwire" },
-        { room: 2, x: 180, kind: "Tripwire" },
+        { room: 2, x: 160, kind: "Tripwire" },
       ],
     });
     expect(errors.some((e) => e.includes("too many"))).toBe(true);
