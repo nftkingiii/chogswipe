@@ -14,6 +14,8 @@ import {
   simulateRaid,
   step,
   validateHideout,
+  HOUSE_PLAN,
+  type FloorPlan,
   type BotOptions,
   type InputLog,
   type Loadout,
@@ -158,9 +160,9 @@ describe("guard", () => {
     let paused = 0;
     for (let i = 0; i < 2_000; i++) {
       step(s, su, 0);
-      expect(s.guard.x).toBeGreaterThanOrEqual(GUARD.x0);
-      expect(s.guard.x).toBeLessThanOrEqual(GUARD.x1);
-      if (s.guard.mode === "pause") paused++;
+      expect(s.guards[0]!.x).toBeGreaterThanOrEqual(GUARD.x0);
+      expect(s.guards[0]!.x).toBeLessThanOrEqual(GUARD.x1);
+      if (s.guards[0]!.mode === "pause") paused++;
     }
     expect(paused).toBeGreaterThan(0);
   });
@@ -186,7 +188,7 @@ describe("guard", () => {
   it("can be outrun back out of the room", () => {
     const su = setup([]);
     const s = inKitchen(su, 100);
-    s.guard = { x: 320, dir: -1, mode: "patrol", timer: 0 };
+    s.guards[0] = { x: 320, dir: -1, mode: "patrol", timer: 0, out: false };
     for (let i = 0; i < 200 && s.room === GUARD.room; i++) step(s, su, Input.LEFT);
     expect(s.result).toBeNull();
     expect(s.room).toBe(GUARD.room - 1);
@@ -195,23 +197,23 @@ describe("guard", () => {
   it("can be jumped over", () => {
     const su = setup([]);
     const s = inKitchen(su, 120);
-    s.guard = { x: 260, dir: -1, mode: "chase", timer: 100 };
+    s.guards[0] = { x: 260, dir: -1, mode: "chase", timer: 100, out: false };
     let jumped = false;
     for (let i = 0; i < 80 && !s.result; i++) {
-      const close = !jumped && s.guard.x - s.x <= 70;
+      const close = !jumped && s.guards[0]!.x - s.x <= 70;
       if (close) jumped = true;
       step(s, su, Input.RIGHT | (close ? Input.JUMP : 0));
     }
     expect(s.result).toBeNull();
-    expect(s.x).toBeGreaterThan(s.guard.x);
+    expect(s.x).toBeGreaterThan(s.guards[0]!.x);
   });
 
   it("does not see a raider sneaking up behind it", () => {
     const su = setup([]);
     const s = inKitchen(su, 300);
-    s.guard = { x: 340, dir: 1, mode: "patrol", timer: 0 }; // walking away
+    s.guards[0] = { x: 340, dir: 1, mode: "patrol", timer: 0, out: false }; // walking away
     for (let i = 0; i < 14; i++) step(s, su, Input.RIGHT);
-    expect(s.x).toBeGreaterThan(s.guard.x);
+    expect(s.x).toBeGreaterThan(s.guards[0]!.x);
     expect(s.events.some((e) => e.type === "caught")).toBe(false);
   });
 
@@ -231,8 +233,8 @@ describe("guard", () => {
     step(d, disguised, Input.LEFT);
     expect(d.result).toBeNull();
     d.lootBps = 10_000;
-    d.x = d.guard.x + 30 * d.guard.dir;
-    d.facing = -d.guard.dir as 1 | -1;
+    d.x = d.guards[0]!.x + 30 * d.guards[0]!.dir;
+    d.facing = -d.guards[0]!.dir as 1 | -1;
     step(d, disguised, 0);
     expect(d.result).toBe("caught");
   });
@@ -240,10 +242,10 @@ describe("guard", () => {
   it("Stink Bomb knocks the guard out for the rest of the raid", () => {
     const su = setup([], loadoutFor({ Tier: "Common", Accessory: "SB" }));
     const s = inKitchen(su, 40);
-    s.guard = { x: 600, dir: 1, mode: "patrol", timer: 0 };
+    s.guards[0] = { x: 600, dir: 1, mode: "patrol", timer: 0, out: false };
     step(s, su, Input.SPECIAL);
-    expect(s.guardOut).toBe(true);
-    s.x = s.guard.x;
+    expect(s.guards[0]!.out).toBe(true);
+    s.x = s.guards[0]!.x;
     step(s, su, 0);
     expect(s.result).toBeNull();
   });
@@ -387,10 +389,12 @@ describe("lore locations", () => {
     const { LOCATIONS } = await import("../src/index.js");
     for (const loc of LOCATIONS) {
       const defender = loadoutFor(loc.traits);
-      expect(validateHideout({ defender, traps: loc.traps }), loc.slug).toEqual([]);
+      expect(validateHideout({ defender, traps: loc.traps, plan: loc.plan }), loc.slug).toEqual([]);
       const su = setup(loc.traps, loadoutFor({ Tier: "Legendary", Head: "Spartan Helmet", Body: "Golden Armor" }), defender);
-      const out = run(su, { route: "kitchen", seeTraps: true });
-      expect(out.result, loc.slug).toBe("escaped");
+      su.hideout.plan = loc.plan;
+      const out = run(su, { plan: loc.plan, seeTraps: true });
+      const why = out.events.filter((e) => ["caught", "trap", "scald", "end"].includes(e.type)).map((e) => `${e.type}@${e.t}`).join(" ");
+      expect(out.result, `${loc.slug}: ${why}`).toBe("escaped");
     }
   });
 });
@@ -425,5 +429,80 @@ describe("Blink and Prank Card", () => {
     step(s, su, 0);
     expect(s.events.some((e) => e.type === "blocked" && e.by === "Prank Card")).toBe(true);
     expect(s.x).toBe(300);
+  });
+});
+
+describe("floor plans", () => {
+  const plan = (over: Partial<FloorPlan>): FloorPlan => ({ ...HOUSE_PLAN, guards: [], ...over });
+  const at = (p: FloorPlan, room: number, x: number) => {
+    const su = setup([]);
+    su.hideout.plan = p;
+    const s = createRaid(su);
+    s.room = room;
+    s.x = x;
+    return { su, s };
+  };
+
+  it("a launch pad goes up but not back down", () => {
+    const p = plan({ links: [{ kind: "launch", a: { room: 2, x: 700 }, b: { room: 5, x: 600 } }] });
+    const { su, s } = at(p, 2, 700);
+    step(s, su, Input.UP);
+    for (let i = 0; i < 40; i++) step(s, su, 0);
+    expect(s.room).toBe(5);
+    step(s, su, Input.DOWN);
+    expect(s.climb).toBeNull();
+  });
+
+  it("a portal works from both ends with UP", () => {
+    const p = plan({ links: [{ kind: "portal", a: { room: 0, x: 240 }, b: { room: 5, x: 220 } }] });
+    const { su, s } = at(p, 0, 240);
+    step(s, su, Input.UP);
+    for (let i = 0; i < 40; i++) step(s, su, 0);
+    expect([s.room, s.x]).toEqual([5, 220]);
+    step(s, su, Input.UP);
+    for (let i = 0; i < 40; i++) step(s, su, 0);
+    expect([s.room, s.x]).toEqual([0, 240]);
+  });
+
+  it("steam scalds while it blasts, and is safe between bursts", () => {
+    const p = plan({ hazards: [{ kind: "steam", room: 4, x0: 500, x1: 800, period: 100, on: 30, offset: 0 }] });
+    const { su, s } = at(p, 4, 600);
+    step(s, su, 0); // t = 1: blasting
+    expect(s.events.some((e) => e.type === "scald")).toBe(true);
+    const quiet = at(p, 4, 600);
+    quiet.s.t = 49; // t = 50: off
+    step(quiet.s, quiet.su, 0);
+    expect(quiet.s.events.some((e) => e.type === "scald")).toBe(false);
+  });
+
+  it("water slows the raider", () => {
+    const p = plan({ hazards: [{ kind: "water", room: 0, x0: 100, x1: 500 }] });
+    const dry = at(plan({}), 0, 200);
+    const wet = at(p, 0, 200);
+    step(dry.s, dry.su, Input.RIGHT);
+    step(wet.s, wet.su, Input.RIGHT);
+    expect(wet.s.x - 200).toBeLessThan(dry.s.x - 200);
+  });
+
+  it("a flying guard can't be jumped", () => {
+    const p = plan({ guards: [{ room: 2, x0: 300, x1: 700, speed: 3, flies: true }] });
+    const { su, s } = at(p, 2, 100);
+    s.guards[0] = { x: 240, dir: -1, mode: "chase", timer: 100, out: false };
+    let jumped = false;
+    for (let i = 0; i < 60 && !s.result; i++) {
+      const close = !jumped && s.guards[0]!.x - s.x <= 70;
+      if (close) jumped = true;
+      step(s, su, Input.RIGHT | (close ? Input.JUMP : 0));
+    }
+    expect(s.result).toBe("caught");
+  });
+
+  it("every guard post patrols on its own", () => {
+    const p = plan({ guards: [{ room: 1, x0: 240, x1: 720, speed: 4 }, { room: 4, x0: 200, x1: 620, speed: 4 }] });
+    const { su, s } = at(p, 0, 100);
+    for (let i = 0; i < 50; i++) step(s, su, 0);
+    expect(s.guards).toHaveLength(2);
+    expect(s.guards[0]!.x).not.toBe(240);
+    expect(s.guards[1]!.x).not.toBe(200);
   });
 });

@@ -1,11 +1,12 @@
 // The six hideout rooms, drawn to match the sim floor plan in @chogswipe/sim map.ts.
 import {
   COLS,
-  LINKS,
-  LOCKED_DOOR,
+  HOUSE_PLAN,
   ROOM_NAMES,
+  ROOMS,
   ROOM_W,
   colOf,
+  type FloorPlan,
   type Link,
 } from "@chogswipe/sim";
 import rough from "roughjs";
@@ -47,14 +48,15 @@ export const DEFAULT_THEME: Theme = {
 
 const px = (x: number) => (x / ROOM_W) * ROOM_PX;
 
-export function bakeRooms(scene: Phaser.Scene, theme: Theme = DEFAULT_THEME) {
-  for (let r = 0; r < 6; r++) bakeRoom(scene, r, theme);
+export function bakeRooms(scene: Phaser.Scene, theme: Theme = DEFAULT_THEME, plan: FloorPlan = HOUSE_PLAN) {
+  const windows = windowsFor(plan);
+  for (let r = 0; r < 6; r++) bakeRoom(scene, r, theme, plan, windows[r]);
   bakeLockedDoor(scene);
   bakeFrontDoor(scene);
   bakeGuard(scene);
 }
 
-function bakeRoom(scene: Phaser.Scene, room: number, theme: Theme) {
+function bakeRoom(scene: Phaser.Scene, room: number, theme: Theme, plan: FloorPlan, win: Pane | undefined) {
   const W = ROOM_PX + 8;
   const H = VIEW_H;
   const col = colOf(room);
@@ -84,20 +86,20 @@ function bakeRoom(scene: Phaser.Scene, room: number, theme: Theme) {
       ctx.fillRect(0, FLOOR_Y - 18, W, 18);
     }
 
-    const win = WINDOWS[room];
     if (win) window_(ctx, rc, seed + 400, win, decor?.frame ?? "#8a5a3c", decor ? decor.curtain : "#c96a5a");
     if (decor) decor.rooms[room]!(paint);
     else props(ctx, rc, seed, room, theme);
-    for (const l of LINKS) drawLink(ctx, rc, seed, room, l);
+    drawHazards(ctx, rc, seed, room, plan);
+    for (const l of plan.links) drawLink(ctx, rc, seed, room, l);
 
     // outer walls and partitions
     if (col === 0) sideWall(rc, ctx, seed + 70, 0);
     if (col === COLS - 1) sideWall(rc, ctx, seed + 71, W - 34);
-    if (col > 0) partition(rc, ctx, seed + 80, 0, false, room === LOCKED_DOOR.right);
-    if (col < COLS - 1) partition(rc, ctx, seed + 90, W - 60, true, room === LOCKED_DOOR.left);
+    if (col > 0) partition(rc, ctx, seed + 80, 0, false, room === plan.lockedDoor?.right);
+    if (col < COLS - 1) partition(rc, ctx, seed + 90, W - 60, true, room === plan.lockedDoor?.left);
 
     sign(ctx, rc, seed + 95, (theme.names ?? ROOM_NAMES)[room]!, room === 5 ? 520 : 470);
-    const dim = (room === 5 ? 0.28 : 0) + (decor?.dim?.[room] ?? 0);
+    const dim = (room === plan.vault.room ? 0.28 : 0) + (decor?.dim?.[room] ?? 0);
     if (dim > 0) {
       // the vault room is dim: harder to spot traps without scouting
       ctx.fillStyle = `rgba(20,14,30,${Math.min(0.42, dim)})`;
@@ -144,16 +146,52 @@ function props(ctx: CanvasRenderingContext2D, rc: RC, seed: number, room: number
 
 // ------------------------------------------------------------- windows
 
-/** Window panes per room (x, y, w, h). Panes are cut out so the night city behind shows through. */
-export const WINDOWS: Record<number, [number, number, number, number] | undefined> = {
+type Pane = [number, number, number, number];
+
+/** Window panes per room in the house (x, y, w, h). Panes are cut out so the view behind shows through. */
+export const WINDOWS: Record<number, Pane | undefined> = {
   0: [60, 150, 170, 140],
   1: [380, 140, 180, 170],
   2: [640, 140, 150, 120],
   3: [660, 140, 190, 170],
   4: [220, 140, 180, 140],
 };
+const SPARE_PANES: Pane[] = [
+  [380, 140, 180, 170],
+  [660, 140, 190, 170],
+  [220, 140, 180, 140],
+  [640, 140, 150, 120],
+  [100, 150, 160, 140],
+];
 
-function window_(ctx: CanvasRenderingContext2D, rc: RC, seed: number, [x, y, w, h]: [number, number, number, number], wood: string, curtain: string | null) {
+/** Where a link takes up wall space in a room: [x0, x1]. Stairs run diagonally between their two ends. */
+function linkSpans(plan: FloorPlan, room: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (const l of plan.links) {
+    for (const end of [l.a, l.b]) {
+      if (end.room !== room) continue;
+      if (l.kind === "stairs") out.push([Math.min(l.a.x, l.b.x) - 60, Math.max(l.a.x, l.b.x) + 60]);
+      else out.push([end.x - 110, end.x + 110]);
+    }
+  }
+  if (room === plan.vault.room) out.push([plan.vault.x - 140, plan.vault.x + 140]);
+  return out;
+}
+
+/** One window per room, kept clear of this plan's stairs, pads, portals and vault. */
+export function windowsFor(plan: FloorPlan): Record<number, Pane | undefined> {
+  const out: Record<number, Pane | undefined> = {};
+  for (let r = 0; r < ROOMS; r++) {
+    const spans = linkSpans(plan, r);
+    const free = (p: Pane) => spans.every(([a, b]) => p[0] + p[2] + 30 < a || p[0] - 30 > b);
+    const home = WINDOWS[r];
+    out[r] = home && free(home) ? home : r === plan.vault.room && plan === HOUSE_PLAN ? undefined : SPARE_PANES.find(free);
+  }
+  if (plan === HOUSE_PLAN) out[5] = undefined; // the house vault room has no window
+  return out;
+}
+
+function window_(ctx: CanvasRenderingContext2D, rc: RC, seed: number, [x, y, w, h]: Pane, wood: string, curtain: string | null) {
   ctx.save();
   ctx.globalCompositeOperation = "destination-out";
   ctx.fillStyle = "#000"; // fully opaque, so the pane is fully erased
@@ -243,6 +281,24 @@ export function bakeForeground(scene: Phaser.Scene, decor?: Decor) {
   }, true);
 }
 
+/** Floor grates for steam vents and a sheen of water, in the rooms that have them. */
+function drawHazards(ctx: CanvasRenderingContext2D, rc: RC, seed: number, room: number, plan: FloorPlan) {
+  for (const h of plan.hazards) {
+    if (h.room !== room) continue;
+    if (h.kind === "water") {
+      ctx.fillStyle = "rgba(75,111,196,0.5)";
+      ctx.fillRect(px(h.x0), FLOOR_Y - 16, px(h.x1) - px(h.x0), 150);
+      for (let x = h.x0 + 30; x < h.x1 - 40; x += 80) rc.line(px(x), FLOOR_Y + 10 + (x % 3) * 12, px(x + 40), FLOOR_Y + 10 + (x % 3) * 12, ink(seed + x, { stroke: "#cfe0ff", strokeWidth: 3 }));
+    } else {
+      for (let x = h.x0 + 20; x < h.x1 - 20; x += 70) {
+        rc.rectangle(px(x), FLOOR_Y - 6, 50, 12, ink(seed + x, { fill: "#3b3033", fillStyle: "solid", strokeWidth: 2.5 }));
+        for (let k = 8; k < 50; k += 10) rc.line(px(x) + k, FLOOR_Y - 5, px(x) + k, FLOOR_Y + 5, ink(seed + x + k, { strokeWidth: 1.5, stroke: "#9aa6b2" }));
+      }
+      arrowTag(ctx, px((h.x0 + h.x1) / 2) - 60, FLOOR_Y - 140, "STEAM VENTS");
+    }
+  }
+}
+
 // ------------------------------------------------------------- structure
 
 function sideWall(rc: RC, ctx: CanvasRenderingContext2D, seed: number, x: number) {
@@ -264,6 +320,32 @@ function drawLink(ctx: CanvasRenderingContext2D, rc: RC, seed: number, room: num
   const upper = l.b.room === room;
   if (!lower && !upper) return;
   const x = px(lower ? l.a.x : l.b.x);
+  if (l.kind === "launch") {
+    if (lower) {
+      // a big spring pad on the floor with an arrow up
+      rc.rectangle(x - 70, FLOOR_Y - 24, 140, 24, ink(seed + 210, { fill: "#e0528a", fillStyle: "solid", strokeWidth: 4 }));
+      for (let i = -50; i <= 50; i += 25) rc.line(x + i, FLOOR_Y - 24, x + i + 12, FLOOR_Y - 60, ink(seed + 211 + i, { strokeWidth: 4, stroke: "#5c6670" }));
+      rc.rectangle(x - 60, FLOOR_Y - 72, 120, 14, ink(seed + 230, { fill: "#f0c35a", fillStyle: "solid", strokeWidth: 3 }));
+      arrowTag(ctx, x - 26, FLOOR_Y - 100, "UP!");
+    } else {
+      // the landing: a hatch in the floor with a target ring
+      ctx.fillStyle = "#1c1618";
+      ctx.fillRect(x - 70, FLOOR_Y, 140, 30);
+      rc.ellipse(x, FLOOR_Y - 6, 160, 26, ink(seed + 240, { stroke: "#e0528a", strokeWidth: 4 }));
+    }
+    return;
+  }
+  if (l.kind === "portal") {
+    // a swirl on the wall; the moving portal sprite is added by the raid scene
+    const g = ctx.createRadialGradient(x, FLOOR_Y - 120, 10, x, FLOOR_Y - 120, 150);
+    g.addColorStop(0, "rgba(160,124,255,0.55)");
+    g.addColorStop(1, "rgba(160,124,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 150, FLOOR_Y - 270, 300, 300);
+    rc.ellipse(x, FLOOR_Y - 120, 170, 230, ink(seed + 250, { stroke: "#5b7cff", strokeWidth: 6 }));
+    arrowTag(ctx, x - 30, FLOOR_Y - 250, "PORTAL ↑");
+    return;
+  }
   if (l.kind === "vent") {
     const y = FLOOR_Y - (lower ? 60 : 300);
     rc.rectangle(x - 46, y - 30, 92, 60, ink(seed + 200, { fill: "#9aa6b2", fillStyle: "solid", strokeWidth: 4 }));

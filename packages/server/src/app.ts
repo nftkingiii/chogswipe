@@ -7,6 +7,7 @@ import {
   INPUT_MASK_MAX,
   RAID_TICKS,
   TICK_HZ,
+  locationById,
   simulateRaid,
   validateHideout,
   type InputLog,
@@ -234,7 +235,8 @@ export async function buildApp(deps: AppDeps) {
     let outcome;
     try {
       outcome = simulateRaid(
-        { seed: raid.seed, raider: raider.loadout, hideout: { defender: target.loadout, traps: raid.traps } },
+        // lore houses have their own floor plans; player hideouts use the house plan
+        { seed: raid.seed, raider: raider.loadout, hideout: { defender: target.loadout, traps: raid.traps, plan: locationById(raid.targetToken)?.plan } },
         inputs,
       );
     } catch {

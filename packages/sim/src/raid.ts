@@ -6,16 +6,18 @@ import type { Loadout, TrapKind } from "./loadout.js";
 import {
   COLS,
   ENTRY_ROOM,
-  GUARD,
-  LINKS,
+  HOUSE_PLAN,
   LINK_REACH,
-  LOCKED_DOOR,
   ROOMS,
   ROOM_W,
   VAULT_ROOM,
   VAULT_X,
   blockedSpots,
   colOf,
+  vaultOnRight,
+  type FloorPlan,
+  type GuardPost,
+  type Link,
 } from "./map.js";
 import { rng } from "./rng.js";
 
@@ -32,6 +34,11 @@ const GRAB_TICKS = 45;
 const LOCKPICK_GRAB_TICKS = 15;
 export const CLIMB_TICKS = 40;
 const VENT_TICKS = 36;
+const LAUNCH_TICKS = 22;
+const PORTAL_TICKS = 30;
+/** Steam scalds once, then gives the raider this long to get clear. */
+const SCALD_COOLDOWN = 45;
+const WATER_SLOW = 4;
 const DOOR_TICKS = 90;
 const LOCKPICK_DOOR_TICKS = 30;
 const GUARD_REACH = 40;
@@ -42,6 +49,8 @@ const GUARD_ALERT_TICKS = 14;
 const GUARD_CHASE_SPEED = 6;
 const GUARD_CHASE_TICKS = 120;
 const GUARD_TURN_TICKS = 12;
+/** How far past either end of its beat a guard will chase. */
+const GUARD_LEASH = 80;
 /** At each end of its beat the guard stops and looks around: the moment to slip past. */
 const GUARD_PAUSE_TICKS = 24;
 const FULL = 10_000; // loot in basis points of the capped amount
@@ -70,6 +79,8 @@ export interface TrapPlacement {
 export interface Hideout {
   defender: Loadout;
   traps: readonly TrapPlacement[];
+  /** the floor plan; player hideouts use the house plan */
+  plan?: FloorPlan;
 }
 
 export interface RaidSetup {
@@ -78,18 +89,21 @@ export interface RaidSetup {
   hideout: Hideout;
 }
 
+export const planOf = (setup: RaidSetup): FloorPlan => setup.hideout.plan ?? HOUSE_PLAN;
+
 export type RaidEvent =
   | { t: number; type: "trap"; trap: number; kind: TrapKind }
   | { t: number; type: "blocked"; trap: number; by: string }
   | { t: number; type: "reveal"; traps: number[]; by: string }
   | { t: number; type: "disarm"; trap: number; by: string }
   | { t: number; type: "hunch"; trap: number }
-  | { t: number; type: "room"; room: number; via: "walk" | "stairs" | "vent" | "spring" }
-  | { t: number; type: "climb"; kind: "stairs" | "vent"; from: number; to: number }
+  | { t: number; type: "room"; room: number; via: "walk" | Link["kind"] | "spring" }
+  | { t: number; type: "climb"; kind: Link["kind"]; from: number; to: number }
+  | { t: number; type: "scald" }
   | { t: number; type: "door"; by: "pick" | "Lockpick" | "Rage Horns" }
-  | { t: number; type: "caught" }
-  | { t: number; type: "spotted" }
-  | { t: number; type: "lost" }
+  | { t: number; type: "caught"; guard: number }
+  | { t: number; type: "spotted"; guard: number }
+  | { t: number; type: "lost"; guard: number }
   | { t: number; type: "guard-out"; by: string }
   | { t: number; type: "grab" }
   | { t: number; type: "drop"; lootBps: number }
@@ -107,6 +121,8 @@ export interface GuardState {
   mode: GuardMode;
   /** ticks left in the current pause, alert or chase */
   timer: number;
+  /** knocked out by a Stink Bomb for the rest of the raid */
+  out: boolean;
 }
 
 interface TrapState extends TrapPlacement {
@@ -116,7 +132,7 @@ interface TrapState extends TrapPlacement {
 }
 
 export interface Climb {
-  kind: "stairs" | "vent";
+  kind: Link["kind"];
   from: { room: number; x: number };
   to: { room: number; x: number };
   left: number;
@@ -144,9 +160,10 @@ export interface RaidState {
   climb: Climb | null;
   doorOpen: boolean;
   doorWork: number;
-  guardOut: boolean;
   guardCooldown: number;
-  guard: GuardState;
+  /** one per guard post in the floor plan */
+  guards: GuardState[];
+  hazardCooldown: number;
   blinkCooldown: number;
   prevMask: number;
   traps: TrapState[];
@@ -173,8 +190,8 @@ const SCOUT_CHARGES: Record<Loadout["scout"], number> = {
 
 // ------------------------------------------------------------------ guard
 
-export function initialGuard(): GuardState {
-  return { x: GUARD.x0, dir: 1, mode: "patrol", timer: 0 };
+export function initialGuard(post: GuardPost): GuardState {
+  return { x: post.x0, dir: 1, mode: "patrol", timer: 0, out: false };
 }
 
 // ------------------------------------------------------------------ layout
@@ -184,7 +201,7 @@ export function validateHideout(h: Hideout): string[] {
   if (h.traps.length > h.defender.stats.trapSlots) {
     errors.push(`too many traps: ${h.traps.length} > ${h.defender.stats.trapSlots}`);
   }
-  const blocked = blockedSpots();
+  const blocked = blockedSpots(h.plan ?? HOUSE_PLAN);
   h.traps.forEach((tr, i) => {
     if (tr.kind !== "Tripwire" && tr.kind !== h.defender.trap) errors.push(`trap ${i}: ${tr.kind} not in loadout`);
     if (!Number.isInteger(tr.room) || tr.room < 0 || tr.room >= ROOMS) errors.push(`trap ${i}: bad room`);
@@ -201,6 +218,7 @@ export function validateHideout(h: Hideout): string[] {
 
 export function createRaid(setup: RaidSetup): RaidState {
   const { raider, hideout } = setup;
+  const plan = planOf(setup);
   const fog = hideout.defender.aura === "Fog" ? 1 : 0;
   const charges = SCOUT_CHARGES[raider.scout];
   return {
@@ -213,7 +231,7 @@ export function createRaid(setup: RaidSetup): RaidState {
     stun: hideout.defender.aura === "Zap" ? scaled(60, setup) : 0,
     invert: 0,
     boost: 0,
-    timeLeft: RAID_TICKS,
+    timeLeft: plan.seconds * TICK_HZ,
     grab: 0,
     lootBps: 0,
     scoutCharges: charges === 0 ? 0 : Math.max(1, charges - fog),
@@ -224,9 +242,9 @@ export function createRaid(setup: RaidSetup): RaidState {
     climb: null,
     doorOpen: false,
     doorWork: 0,
-    guardOut: false,
     guardCooldown: 0,
-    guard: initialGuard(),
+    guards: plan.guards.map(initialGuard),
+    hazardCooldown: 0,
     blinkCooldown: 0,
     prevMask: 0,
     traps: hideout.traps.map((tr) => ({ ...tr, armed: true, revealed: false, hunched: false })),
@@ -252,6 +270,7 @@ export function step(s: RaidState, setup: RaidSetup, mask: number): void {
   if (s.boost > 0) s.boost -= 1;
   if (s.invert > 0) s.invert -= 1;
   if (s.guardCooldown > 0) s.guardCooldown -= 1;
+  if (s.hazardCooldown > 0) s.hazardCooldown -= 1;
   if (s.blinkCooldown > 0) s.blinkCooldown -= 1;
 
   if (s.climb) {
@@ -270,12 +289,14 @@ export function step(s: RaidState, setup: RaidSetup, mask: number): void {
     if (!tryClimb(s, setup, pressed)) move(s, setup, mask, pressed);
   }
 
-  moveGuard(s, setup);
+  const plan = planOf(setup);
+  plan.guards.forEach((post, i) => moveGuard(s, setup, i, post));
   if (!s.climb && s.air === 0) {
     hunch(s, setup);
     triggerTraps(s, setup);
+    hazards(s, setup, plan);
   }
-  if (catchRaider(s, setup)) return;
+  for (let i = 0; i < plan.guards.length; i++) if (catchRaider(s, setup, i, plan.guards[i]!)) return;
 
   if (s.hp <= 0) {
     if (raider.special === "Second Life" && !s.secondLifeUsed) {
@@ -311,19 +332,27 @@ function speedOf(s: RaidState, setup: RaidSetup): number {
   if (s.boost > 0) v += 4;
   if (hideout.defender.aura === "Chill") v -= 2;
   if (hideout.defender.special === "Dump") v -= 1;
-  return v;
+  const wet = planOf(setup).hazards.some((h) => h.kind === "water" && h.room === s.room && s.x >= h.x0 && s.x <= h.x1);
+  if (wet && s.air === 0) v -= WATER_SLOW;
+  return Math.max(2, v);
 }
 
-/** UP at a lower link end or DOWN at an upper one starts a climb. Vents need Vent Crawl. */
+const LINK_TICKS: Record<Link["kind"], number> = { stairs: CLIMB_TICKS, vent: VENT_TICKS, launch: LAUNCH_TICKS, portal: PORTAL_TICKS };
+
+/**
+ * UP at a lower link end or DOWN at an upper one starts a climb. Vents need Vent Crawl.
+ * A launch pad only goes up. A portal works from either end with UP.
+ */
 function tryClimb(s: RaidState, setup: RaidSetup, pressed: number): boolean {
   if (s.air > 0 || !(pressed & (Input.UP | Input.DOWN))) return false;
-  for (const l of LINKS) {
+  for (const l of planOf(setup).links) {
     if (l.kind === "vent" && setup.raider.head !== "Vent Crawl") continue;
-    const up = pressed & Input.UP && l.a.room === s.room && Math.abs(l.a.x - s.x) <= LINK_REACH;
-    const down = pressed & Input.DOWN && l.b.room === s.room && Math.abs(l.b.x - s.x) <= LINK_REACH;
+    const near = (e: { room: number; x: number }) => e.room === s.room && Math.abs(e.x - s.x) <= LINK_REACH;
+    const up = !!(pressed & Input.UP) && near(l.a);
+    const down = l.kind === "portal" ? !!(pressed & Input.UP) && near(l.b) : l.kind !== "launch" && !!(pressed & Input.DOWN) && near(l.b);
     if (!up && !down) continue;
     const [from, to] = up ? [l.a, l.b] : [l.b, l.a];
-    const total = l.kind === "vent" ? VENT_TICKS : CLIMB_TICKS;
+    const total = LINK_TICKS[l.kind];
     s.climb = { kind: l.kind, from: { room: s.room, x: s.x }, to: { ...to }, left: total, total };
     s.events.push({ t: s.t, type: "climb", kind: l.kind, from: from.room, to: to.room });
     return true;
@@ -334,8 +363,9 @@ function tryClimb(s: RaidState, setup: RaidSetup, pressed: number): boolean {
 /** A closed locked door stops the raider this far from the wall, so it stands in front of it. */
 export const DOOR_STOP = 90;
 
-function atLockedDoor(s: RaidState): boolean {
-  return (s.room === LOCKED_DOOR.left && s.x >= ROOM_W - DOOR_STOP - 20) || (s.room === LOCKED_DOOR.right && s.x <= DOOR_STOP + 20);
+function atLockedDoor(s: RaidState, plan: FloorPlan): boolean {
+  const d = plan.lockedDoor;
+  return !!d && ((s.room === d.left && s.x >= ROOM_W - DOOR_STOP - 20) || (s.room === d.right && s.x <= DOOR_STOP + 20));
 }
 
 function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): void {
@@ -346,8 +376,10 @@ function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): vo
   if (s.air > 0) s.air -= 1;
   else if (pressed & Input.JUMP) s.air = JUMP_TICKS;
 
+  const plan = planOf(setup);
+  const door = plan.lockedDoor;
   // working the locked door: hold GRAB next to it
-  if (!s.doorOpen && atLockedDoor(s) && mask & Input.GRAB && s.air === 0) {
+  if (!s.doorOpen && atLockedDoor(s, plan) && mask & Input.GRAB && s.air === 0) {
     if (setup.raider.head === "Rage Horns") {
       s.doorOpen = true;
       s.events.push({ t: s.t, type: "door", by: "Rage Horns" });
@@ -363,21 +395,21 @@ function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): vo
   }
 
   s.x += dir * speedOf(s, setup);
-  if (!s.doorOpen) {
-    if (s.room === LOCKED_DOOR.left) s.x = Math.min(s.x, ROOM_W - DOOR_STOP);
-    if (s.room === LOCKED_DOOR.right) s.x = Math.max(s.x, DOOR_STOP);
+  if (!s.doorOpen && door) {
+    if (s.room === door.left) s.x = Math.min(s.x, ROOM_W - DOOR_STOP);
+    if (s.room === door.right) s.x = Math.max(s.x, DOOR_STOP);
   }
 
   const col = colOf(s.room);
   if (s.x > ROOM_W) {
-    const blocked = s.room === LOCKED_DOOR.left && !s.doorOpen;
+    const blocked = !!door && s.room === door.left && !s.doorOpen;
     if (col < COLS - 1 && !blocked) {
       s.room += 1;
       s.x = 0;
       s.events.push({ t: s.t, type: "room", room: s.room, via: "walk" });
     } else s.x = ROOM_W;
   } else if (s.x < 0) {
-    const blocked = s.room === LOCKED_DOOR.right && !s.doorOpen;
+    const blocked = !!door && s.room === door.right && !s.doorOpen;
     if (col > 0 && !blocked) {
       s.room -= 1;
       s.x = ROOM_W;
@@ -385,7 +417,8 @@ function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): vo
     } else s.x = 0;
   }
 
-  const atVault = s.room === VAULT_ROOM && s.x >= VAULT_X - 40;
+  const v = plan.vault;
+  const atVault = s.room === v.room && (vaultOnRight(plan) ? s.x >= v.x - 40 : s.x <= v.x + 40);
   if (atVault && s.lootBps === 0 && mask & Input.GRAB && s.air === 0) {
     s.grab += 1;
     const need = setup.raider.head === "Lockpick" ? LOCKPICK_GRAB_TICKS : GRAB_TICKS;
@@ -398,33 +431,33 @@ function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): vo
   }
 }
 
-/** The guard ignores a raider in Disguise until it carries loot, and everyone while knocked out or distracted. */
+/** Guards ignore a raider in Disguise until it carries loot, and everyone while distracted by a Decoy Coin. */
 function guardBlind(s: RaidState, setup: RaidSetup): boolean {
-  return s.guardOut || s.guardCooldown > 0 || (setup.raider.body === "Disguise" && s.lootBps === 0);
+  return s.guardCooldown > 0 || (setup.raider.body === "Disguise" && s.lootBps === 0);
 }
 
-/** The raider is in the guard's room, on the floor, where the guard could reach it. */
-function inGuardRoom(s: RaidState): boolean {
-  return s.room === GUARD.room && !s.climb;
+/** The raider is in this guard's room, not on the stairs, where the guard could reach it. */
+function inGuardRoom(s: RaidState, post: GuardPost): boolean {
+  return s.room === post.room && !s.climb;
 }
 
 /** Patrol the beat, pause at each end, spot raiders in front, chase them, then walk back. */
-function moveGuard(s: RaidState, setup: RaidSetup): void {
-  const g = s.guard;
-  if (s.guardOut) return;
+function moveGuard(s: RaidState, setup: RaidSetup, i: number, post: GuardPost): void {
+  const g = s.guards[i]!;
+  if (g.out) return;
   const blind = guardBlind(s, setup);
-  const ahead = inGuardRoom(s) && (s.x - g.x) * g.dir >= 0 && Math.abs(s.x - g.x) <= GUARD_SIGHT;
+  const ahead = inGuardRoom(s, post) && (s.x - g.x) * g.dir >= 0 && Math.abs(s.x - g.x) <= GUARD_SIGHT;
   if (!blind && ahead && (g.mode === "patrol" || g.mode === "pause" || g.mode === "return")) {
     g.mode = "alert";
     g.timer = GUARD_ALERT_TICKS;
-    s.events.push({ t: s.t, type: "spotted" });
+    s.events.push({ t: s.t, type: "spotted", guard: i });
     return;
   }
   switch (g.mode) {
     case "patrol": {
-      g.x += g.dir * GUARD.speed;
-      if (g.x >= GUARD.x1 || g.x <= GUARD.x0) {
-        g.x = Math.max(GUARD.x0, Math.min(GUARD.x1, g.x));
+      g.x += g.dir * post.speed;
+      if (g.x >= post.x1 || g.x <= post.x0) {
+        g.x = Math.max(post.x0, Math.min(post.x1, g.x));
         g.mode = "pause";
         g.timer = GUARD_PAUSE_TICKS;
       }
@@ -442,9 +475,9 @@ function moveGuard(s: RaidState, setup: RaidSetup): void {
       }
       return;
     case "chase": {
-      if (blind || !inGuardRoom(s) || --g.timer <= 0) {
+      if (blind || !inGuardRoom(s, post) || --g.timer <= 0) {
         g.mode = "return";
-        s.events.push({ t: s.t, type: "lost" });
+        s.events.push({ t: s.t, type: "lost", guard: i });
         return;
       }
       if ((s.x - g.x) * g.dir < 0) {
@@ -454,33 +487,34 @@ function moveGuard(s: RaidState, setup: RaidSetup): void {
         g.timer = GUARD_TURN_TICKS;
         return;
       }
-      const step = Math.min(GUARD_CHASE_SPEED, Math.abs(s.x - g.x));
-      g.x = Math.max(40, Math.min(ROOM_W - 40, g.x + g.dir * step));
+      const step = Math.min(GUARD_CHASE_SPEED + Math.max(0, post.speed - 3), Math.abs(s.x - g.x));
+      // guards don't stray far from their post: past it, the raider is out of reach
+      g.x = Math.max(Math.max(40, post.x0 - GUARD_LEASH), Math.min(Math.min(ROOM_W - 40, post.x1 + GUARD_LEASH), g.x + g.dir * step));
       return;
     }
     case "return": {
-      const home = Math.max(GUARD.x0, Math.min(GUARD.x1, g.x));
+      const home = Math.max(post.x0, Math.min(post.x1, g.x));
       if (home === g.x) {
         g.mode = "patrol";
         return;
       }
       g.dir = home > g.x ? 1 : -1;
-      g.x += g.dir * Math.min(GUARD.speed, Math.abs(home - g.x));
+      g.x += g.dir * Math.min(post.speed, Math.abs(home - g.x));
       return;
     }
   }
 }
 
-/** Getting grabbed by the guard ends the raid. Second Life saves you once. */
-function catchRaider(s: RaidState, setup: RaidSetup): boolean {
-  const g = s.guard;
-  if (guardBlind(s, setup) || !inGuardRoom(s) || s.air > 0) return false;
+/** Getting grabbed by a guard ends the raid. Second Life saves you once. Flying guards grab jumpers too. */
+function catchRaider(s: RaidState, setup: RaidSetup, i: number, post: GuardPost): boolean {
+  const g = s.guards[i]!;
+  if (g.out || guardBlind(s, setup) || !inGuardRoom(s, post) || (s.air > 0 && !post.flies)) return false;
   const dx = s.x - g.x;
   if (Math.abs(dx) > GUARD_REACH) return false;
   // a chasing guard grabs; otherwise only a raider walking into its face. Overtaking its back slips by.
   const faceOn = dx * g.dir >= 0 && s.facing === -g.dir;
   if (g.mode !== "chase" && !faceOn) return false;
-  s.events.push({ t: s.t, type: "caught" });
+  s.events.push({ t: s.t, type: "caught", guard: i });
   if (setup.raider.special === "Second Life" && !s.secondLifeUsed) {
     s.secondLifeUsed = true;
     s.events.push({ t: s.t, type: "second-life" });
@@ -492,6 +526,23 @@ function catchRaider(s: RaidState, setup: RaidSetup): boolean {
   }
   end(s, "caught", 0);
   return true;
+}
+
+/** Steam vents: is this vent blasting at tick t? */
+export function steamOn(h: { period: number; on: number; offset: number }, t: number): boolean {
+  return (t + h.offset) % h.period < h.on;
+}
+
+function hazards(s: RaidState, setup: RaidSetup, plan: FloorPlan): void {
+  if (s.hazardCooldown > 0) return;
+  for (const h of plan.hazards) {
+    if (h.kind !== "steam" || h.room !== s.room || s.x < h.x0 || s.x > h.x1 || !steamOn(h, s.t)) continue;
+    s.events.push({ t: s.t, type: "scald" });
+    s.hp -= 1;
+    s.stun = Math.max(s.stun, scaled(20, setup));
+    s.hazardCooldown = SCALD_COOLDOWN;
+    return;
+  }
 }
 
 /** Armed traps in the current room, ordered by distance in the facing direction. */
@@ -552,11 +603,12 @@ const BLINK_DIST = 220;
 const BLINK_COOLDOWN = 150;
 
 /** Blink (Body): a short teleport forward, on a cooldown. Stops at a closed locked door. */
-function blink(s: RaidState): boolean {
+function blink(s: RaidState, plan: FloorPlan): boolean {
   if (s.blinkCooldown > 0 || s.air > 0) return false;
   let x = s.x + s.facing * BLINK_DIST;
-  if (!s.doorOpen && s.room === LOCKED_DOOR.left) x = Math.min(x, ROOM_W - DOOR_STOP);
-  if (!s.doorOpen && s.room === LOCKED_DOOR.right) x = Math.max(x, DOOR_STOP);
+  const d = plan.lockedDoor;
+  if (d && !s.doorOpen && s.room === d.left) x = Math.min(x, ROOM_W - DOOR_STOP);
+  if (d && !s.doorOpen && s.room === d.right) x = Math.max(x, DOOR_STOP);
   s.x = Math.max(0, Math.min(ROOM_W, x));
   s.blinkCooldown = BLINK_COOLDOWN;
   s.events.push({ t: s.t, type: "special", kind: "Blink" });
@@ -566,7 +618,7 @@ function blink(s: RaidState): boolean {
 function special(s: RaidState, setup: RaidSetup): void {
   // with no one-shot special to use, Blink bodies teleport instead
   if (setup.raider.body === "Blink" && (!setup.raider.special || s.specialUsed || setup.raider.special === "Second Life")) {
-    blink(s);
+    blink(s, planOf(setup));
     return;
   }
   const kind = setup.raider.special;
@@ -585,9 +637,10 @@ function special(s: RaidState, setup: RaidSetup): void {
       break;
     }
     case "Decoy Coin": {
-      if (s.room === GUARD.room && !s.guardOut) {
-        s.guardCooldown = 180; // guard goes after the coin
-        s.guard.mode = "return";
+      const here = planOf(setup).guards.flatMap((p, i) => (p.room === s.room && !s.guards[i]!.out ? [s.guards[i]!] : []));
+      if (here.length) {
+        s.guardCooldown = 180; // the guards go after the coin
+        here.forEach((g) => (g.mode = "return"));
         break;
       }
       const target = ahead(s, 320).find((i) => s.traps[i]!.kind === "Bait Coin");
@@ -596,10 +649,12 @@ function special(s: RaidState, setup: RaidSetup): void {
       break;
     }
     case "Stink Bomb":
-      if (s.room === GUARD.room && !s.guardOut) {
-        s.guardOut = true;
-        s.events.push({ t: s.t, type: "guard-out", by: kind });
-      }
+      planOf(setup).guards.forEach((p, i) => {
+        if (p.room === s.room && !s.guards[i]!.out) {
+          s.guards[i]!.out = true;
+          s.events.push({ t: s.t, type: "guard-out", by: kind });
+        }
+      });
       s.traps.forEach((tr, i) => {
         if (tr.armed && tr.room === s.room && Math.abs(tr.x - s.x) <= 120) disarm(s, i, kind);
       });

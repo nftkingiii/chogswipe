@@ -127,12 +127,23 @@ export class MapScene extends Phaser.Scene {
     );
     const d = loadoutFor(loc.traits);
     const facts = [
-      `Defender: ${d.tier}`,
-      `Traps: ${loc.traps.length} · mostly ${d.trap}`,
-      `Loot: ${loc.loot}`,
+      `Defender: ${d.tier} · ${loc.traps.length} traps`,
+      `${loc.plan.guards.length > 1 ? `${loc.plan.guards.length} guards` : "1 guard"} · ${loc.plan.seconds}s on the clock`,
     ];
+    const factText = keep(
+      this.add.text(x + 20, blurb.y + blurb.height + 10, facts.join("\n"), { fontFamily: FONT_BODY, fontSize: "17px", color: INK, lineSpacing: 2, wordWrap: { width: w - 40 } }),
+    );
+    // what makes this heist different, on a gold sticky note
     keep(
-      this.add.text(x + 20, blurb.y + blurb.height + 14, facts.join("\n"), { fontFamily: FONT_BODY, fontSize: "17px", color: INK, lineSpacing: 4, wordWrap: { width: w - 40 } }),
+      this.add.text(x + 14, factText.y + factText.height + 10, loc.twist, {
+        fontFamily: FONT_BODY,
+        fontSize: "16px",
+        color: INK,
+        backgroundColor: "#f6e3a8",
+        padding: { x: 8, y: 6 },
+        wordWrap: { width: w - 44 },
+        lineSpacing: 1,
+      }),
     );
     keep(button(this, x + w / 2, y + h - 46, w - 40, "Start heist", () => startHeist(this, { chog: this.chog, location: loc })));
   }

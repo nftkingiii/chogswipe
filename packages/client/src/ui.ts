@@ -1,7 +1,7 @@
 // Shared menu styling: warm paper, ink outlines, one pink accent.
 import Phaser from "phaser";
 import { bake, grain, ink, INK, PAPER } from "./art.js";
-import { Input, initialGuard, type RaidState } from "@chogswipe/sim";
+import { Input, type RaidState } from "@chogswipe/sim";
 import { sfx, unlockAudio } from "./sfx.js";
 
 export const FONT_TITLE = "'Luckiest Guy', sans-serif";
@@ -93,9 +93,9 @@ export function poseState(pose: "idle" | "win" | "run", t: number): RaidState {
     climb: null,
     doorOpen: false,
     doorWork: 0,
-    guardOut: false,
     guardCooldown: 0,
-    guard: initialGuard(),
+    guards: [],
+    hazardCooldown: 0,
     blinkCooldown: 0,
     prevMask: pose === "run" ? Input.RIGHT : 0,
     traps: [],
