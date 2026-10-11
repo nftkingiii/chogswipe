@@ -16,6 +16,12 @@ interface Session {
   selected: number; // index into chogs
 }
 
+/**
+ * Holder mode: wallet sign-in, raids on other holders, vaults and settlement on Monad.
+ * Off during the public demo; build with VITE_HOLDER_MODE=1 to switch it on at full launch.
+ */
+export const HOLDER_MODE = import.meta.env.VITE_HOLDER_MODE === "1";
+
 const demoChogs = (): PlayChog[] => DEMO_ROSTER.map((c) => ({ ...c, vault: null, layout: null }));
 
 export const session: Session = { mode: "demo", address: null, chogs: demoChogs(), selected: 0 };
@@ -34,6 +40,7 @@ export const imageUrl = (c: RosterChog) => (c.image.startsWith("http") ? c.image
 
 /** Connect a wallet, sign in, and load the holder's Chogs. */
 export async function goLive(): Promise<void> {
+  if (!HOLDER_MODE) throw new Error("Wallets open at full launch");
   const w = wallet() ?? (await connectWallet(true));
   // a saved sign-in only counts if it belongs to the account that's connected now
   if (signedIn()) {

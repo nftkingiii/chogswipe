@@ -119,7 +119,7 @@ export const TABS: [key: string, label: string][] = [
  * Logo, workflow tabs and the wallet chip, shared by every menu screen.
  * Tabs that need a signed-in holder stay visible and explain themselves when opened.
  */
-export function topNav(scene: Phaser.Scene, active: string, wallet: { label: string; onClick: () => void }) {
+export function topNav(scene: Phaser.Scene, active: string, wallet: { label: string; onClick: () => void; disabled?: boolean }) {
   const W = DESIGN_W;
   scene.add.text(40, 22, "CHOGSWIPE", { fontFamily: FONT_TITLE, fontSize: "40px", color: INK });
   let x = 312;
@@ -150,7 +150,8 @@ export function topNav(scene: Phaser.Scene, active: string, wallet: { label: str
       padding: { x: 14, y: 8 },
     })
     .setOrigin(1, 0)
-    .setInteractive({ useHandCursor: true });
+    .setInteractive({ useHandCursor: !wallet.disabled });
+  if (wallet.disabled) chip.setAlpha(0.4);
   chip.on("pointerdown", wallet.onClick);
   return chip;
 }
