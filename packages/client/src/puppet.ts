@@ -142,7 +142,7 @@ export class Puppet {
   }
 
   poseOf(s: RaidState): Pose {
-    if (s.result === "knocked-out") return "ko";
+    if (s.result === "knocked-out" || s.result === "caught") return "ko";
     if (this.won || s.result === "escaped") return "win";
     if (s.stun > 0) return "stunned";
     if (s.air > 0) return "jump";

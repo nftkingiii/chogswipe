@@ -9,7 +9,6 @@ import {
   ROOM_W,
   VAULT_ROOM,
   createRaid,
-  guardX,
   loadoutFor,
   makeBot,
   simulateRaid,
@@ -146,44 +145,107 @@ describe("map routes", () => {
 });
 
 describe("guard", () => {
-  it("patrols deterministically between its bounds", () => {
-    for (let t = 0; t < 2_000; t += 7) {
-      expect(guardX(t)).toBeGreaterThanOrEqual(GUARD.x0);
-      expect(guardX(t)).toBeLessThanOrEqual(GUARD.x1);
-    }
-  });
-
-  it("catches a raider who walks into it, but Disguise passes unless carrying loot", () => {
-    const su = setup([]);
+  const inKitchen = (su: RaidSetup, x: number) => {
     const s = createRaid(su);
     s.room = GUARD.room;
-    s.x = guardX(1);
-    step(s, su, 0);
-    expect(s.events.some((e) => e.type === "caught")).toBe(true);
-    expect(s.hp).toBe(2);
+    s.x = x;
+    return s;
+  };
 
+  it("patrols its beat and pauses at each end", () => {
+    const su = setup([]);
+    const s = createRaid(su);
+    let paused = 0;
+    for (let i = 0; i < 2_000; i++) {
+      step(s, su, 0);
+      expect(s.guard.x).toBeGreaterThanOrEqual(GUARD.x0);
+      expect(s.guard.x).toBeLessThanOrEqual(GUARD.x1);
+      if (s.guard.mode === "pause") paused++;
+    }
+    expect(paused).toBeGreaterThan(0);
+  });
+
+  it("catches a raider who walks into its face and ends the raid", () => {
+    const su = setup([]);
+    const s = inKitchen(su, GUARD.x0 + 44); // right in front of it
+    s.facing = -1;
+    step(s, su, Input.LEFT);
+    expect(s.events.some((e) => e.type === "caught")).toBe(true);
+    expect(s.result).toBe("caught");
+  });
+
+  it("spots a raider ahead and gives chase", () => {
+    const su = setup([]);
+    const s = inKitchen(su, GUARD.x0 + 200);
+    step(s, su, 0);
+    expect(s.events.some((e) => e.type === "spotted")).toBe(true);
+    for (let i = 0; i < 60 && !s.result; i++) step(s, su, 0);
+    expect(s.result).toBe("caught");
+  });
+
+  it("can be outrun back out of the room", () => {
+    const su = setup([]);
+    const s = inKitchen(su, 100);
+    s.guard = { x: 320, dir: -1, mode: "patrol", timer: 0 };
+    for (let i = 0; i < 200 && s.room === GUARD.room; i++) step(s, su, Input.LEFT);
+    expect(s.result).toBeNull();
+    expect(s.room).toBe(GUARD.room - 1);
+  });
+
+  it("can be jumped over", () => {
+    const su = setup([]);
+    const s = inKitchen(su, 120);
+    s.guard = { x: 260, dir: -1, mode: "chase", timer: 100 };
+    let jumped = false;
+    for (let i = 0; i < 80 && !s.result; i++) {
+      const close = !jumped && s.guard.x - s.x <= 70;
+      if (close) jumped = true;
+      step(s, su, Input.RIGHT | (close ? Input.JUMP : 0));
+    }
+    expect(s.result).toBeNull();
+    expect(s.x).toBeGreaterThan(s.guard.x);
+  });
+
+  it("does not see a raider sneaking up behind it", () => {
+    const su = setup([]);
+    const s = inKitchen(su, 300);
+    s.guard = { x: 340, dir: 1, mode: "patrol", timer: 0 }; // walking away
+    for (let i = 0; i < 14; i++) step(s, su, Input.RIGHT);
+    expect(s.x).toBeGreaterThan(s.guard.x);
+    expect(s.events.some((e) => e.type === "caught")).toBe(false);
+  });
+
+  it("Second Life survives one catch", () => {
+    const su = setup([], loadoutFor({ Tier: "Common", Accessory: "Heart" }));
+    const s = inKitchen(su, GUARD.x0 + 44);
+    s.facing = -1;
+    step(s, su, Input.LEFT);
+    expect(s.result).toBeNull();
+    expect(s.secondLifeUsed).toBe(true);
+  });
+
+  it("Disguise passes unless carrying loot", () => {
     const disguised = setup([], loadoutFor({ Tier: "Common", Body: "Tuxedo" }));
-    const d = createRaid(disguised);
-    d.room = GUARD.room;
-    d.x = guardX(1);
-    step(d, disguised, 0);
-    expect(d.events.some((e) => e.type === "caught")).toBe(false);
+    const d = inKitchen(disguised, GUARD.x0 + 44);
+    d.facing = -1;
+    step(d, disguised, Input.LEFT);
+    expect(d.result).toBeNull();
     d.lootBps = 10_000;
-    d.x = guardX(2);
+    d.x = d.guard.x + 30 * d.guard.dir;
+    d.facing = -d.guard.dir as 1 | -1;
     step(d, disguised, 0);
-    expect(d.events.some((e) => e.type === "caught")).toBe(true);
+    expect(d.result).toBe("caught");
   });
 
   it("Stink Bomb knocks the guard out for the rest of the raid", () => {
     const su = setup([], loadoutFor({ Tier: "Common", Accessory: "SB" }));
-    const s = createRaid(su);
-    s.room = GUARD.room;
-    s.x = 100;
+    const s = inKitchen(su, 40);
+    s.guard = { x: 600, dir: 1, mode: "patrol", timer: 0 };
     step(s, su, Input.SPECIAL);
     expect(s.guardOut).toBe(true);
-    s.x = guardX(s.t + 1);
+    s.x = s.guard.x;
     step(s, su, 0);
-    expect(s.events.some((e) => e.type === "caught")).toBe(false);
+    expect(s.result).toBeNull();
   });
 });
 

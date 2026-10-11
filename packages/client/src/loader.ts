@@ -11,7 +11,7 @@ const STATUS = ["Picking the lock…", "Counting the $CHOG…", "Dodging the Fwo
 const TIPS = [
   "Your Chog's traits are its gadgets. Check them before every heist.",
   "Traps hide until you scout. Press Q when you enter a room.",
-  "Space jumps traps, and the guard too if you time it.",
+  "If the guard sees you, it chases you. Sneak up behind it, or jump it with Space.",
   "Hold F at the vault to swipe. The loot only counts if you get back out the front door.",
   "Set your own traps in the Hideout tab. Raiders will walk right into them.",
 ];

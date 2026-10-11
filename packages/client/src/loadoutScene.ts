@@ -10,7 +10,8 @@ import { imageUrl, selectChog, session } from "./session.js";
 import { nav } from "./nav.js";
 import { advance, onboardStep } from "./onboarding.js";
 import { castReady, loadCast } from "./cast.js";
-import { ACCENT_N, DESIGN_W, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, poseState, roundTexture } from "./ui.js";
+import { portraitImage } from "./portraits.js";
+import { ACCENT_N, DESIGN_W, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, poseState } from "./ui.js";
 
 const TIER_COLOR: Record<string, string> = {
   Common: "#8a7d70",
@@ -40,10 +41,9 @@ export class LoadoutScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.setCORS("anonymous");
     this.load.image("chog-sheet", "/sprites/chog.png");
     loadCast(this);
-    for (const c of session.chogs) if (!this.textures.exists(`portrait:${c.id}`)) this.load.image(`portrait:${c.id}`, imageUrl(c));
+    // NFT portraits load in the background (portraitImage), so a slow IPFS gateway never blanks the screen
   }
 
   create() {
@@ -68,7 +68,7 @@ export class LoadoutScene extends Phaser.Scene {
       const y = 600;
       const g = this.add.graphics();
       this.cards.push(g);
-      this.add.image(x + 48, y + 44, roundTexture(this, `portrait:${c.id}`)).setDisplaySize(86, 86);
+      portraitImage(this, x + 48, y + 44, `portrait:${c.id}`, imageUrl(c), 86, true);
       this.add.text(x + 48, y + 98, `#${c.id}`, { fontFamily: FONT_TITLE, fontSize: "18px", color: INK }).setOrigin(0.5, 0);
       const hit = this.add.zone(x, y - 4, 96, 130).setOrigin(0, 0).setInteractive({ useHandCursor: true });
       hit.on("pointerdown", () => this.select(i));
@@ -121,8 +121,7 @@ export class LoadoutScene extends Phaser.Scene {
 
     // the NFT and how each trait turns into a gadget
     keep(panel(this, 500, 150, 732, 420));
-    const p = keep(this.add.image(588, 238, `portrait:${chog.id}`).setDisplaySize(140, 140));
-    void p;
+    keep(portraitImage(this, 588, 238, `portrait:${chog.id}`, imageUrl(chog), 140));
     keep(this.add.graphics().lineStyle(4, INK_N, 1).strokeRoundedRect(518, 168, 140, 140, 10));
     keep(this.add.text(678, 172, `CHOG #${chog.id}`, { fontFamily: FONT_TITLE, fontSize: "34px", color: INK }));
     keep(

@@ -1,18 +1,28 @@
-// Fitting the game to the screen. The game is always 720 tall; its width follows the
-// screen's shape (1280 at 16:9, up to MAX_W on wide laptops and phones held sideways),
-// so it fills the window instead of sitting between black bars.
+// Fitting the game to the screen. The game is always 720 tall.
+// Desktop: a 1280×720 frame centred in the window, never blown up past MAX_SCALE, so the
+// browser stays a browser. Phones: full screen and sideways, with the width following the
+// screen's shape (up to MAX_W) so there are no black bars.
 import type Phaser from "phaser";
 
 const H = 720;
 const MIN_W = 1280;
 const MAX_W = 1720;
+const MAX_SCALE = 1.125;
+
+export const isPhone = () => matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 820;
 
 export function gameWidth(): number {
+  if (!isPhone()) return MIN_W;
   const aspect = window.innerWidth / Math.max(1, window.innerHeight);
   return Math.round(Math.min(MAX_W, Math.max(MIN_W, H * aspect)));
 }
 
 export const GAME_H = H;
+
+/** Largest size the game is drawn at on desktop; phones fill the screen. */
+export function maxSize(): { width: number; height: number } | undefined {
+  return isPhone() ? undefined : { width: Math.round(MIN_W * MAX_SCALE), height: Math.round(H * MAX_SCALE) };
+}
 
 /** Resize the game with the window. Menu screens are rebuilt for the new width; a raid keeps going. */
 export function fitToWindow(game: Phaser.Game) {
@@ -29,14 +39,12 @@ export function fitToWindow(game: Phaser.Game) {
   });
 }
 
-const isPhone = () => matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 820;
-
 /**
  * On phones, the first tap goes full screen and locks to landscape where the browser allows it
  * (Android Chrome does; iPhone Safari doesn't, so there the rotate prompt does the work).
  */
 export function phoneFullscreen() {
-  if (!isPhone()) return;
+  if (!isPhone()) return document.documentElement.classList.add("desktop");
   document.documentElement.classList.add("phone");
   const go = async () => {
     const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };

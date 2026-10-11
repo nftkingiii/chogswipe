@@ -2,7 +2,7 @@
 // Used for demos and tests; real players send their own inputs.
 import { COLS, LINKS, LOCKED_DOOR, ROOM_W, VAULT_ROOM, VAULT_X, colOf, floorOf } from "./map.js";
 import { GUARD } from "./map.js";
-import { DOOR_STOP, Input, guardX, type RaidState } from "./raid.js";
+import { DOOR_STOP, Input, type RaidState } from "./raid.js";
 
 const LOUNGE = LINKS[0]!;
 const KITCHEN = LINKS[1]!;
@@ -98,7 +98,9 @@ export function makeBot(opts: BotOptions = {}) {
       const near = s.traps.some(
         (t) => t.armed && (opts.seeTraps || t.revealed) && t.room === s.room && (t.x - s.x) * dir > 0 && (t.x - s.x) * dir <= 44,
       );
-      const g = s.room === GUARD.room && !s.guardOut && s.guardCooldown === 0 && Math.abs(guardX(s.t) - s.x) <= 70 && (guardX(s.t) - s.x) * dir > 0;
+      // hop the guard when it's close ahead and facing this way (from behind, just tiptoe past)
+      const gd = s.guard.x - s.x;
+      const g = s.room === GUARD.room && !s.guardOut && s.guardCooldown === 0 && gd * dir > 0 && Math.abs(gd) <= 80 && (gd * s.guard.dir < 0 || s.guard.mode === "chase");
       if (near || g) mask |= Input.JUMP;
     }
     return mask;

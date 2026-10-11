@@ -24,7 +24,7 @@ const NODES: [number, number][] = [
 
 const GUIDE_TIPS = [
   "Traps hide until you scout. Press Q to use your eyes.",
-  "Space jumps traps. It also jumps the guard if you time it.",
+  "Space jumps traps. If the guard spots you it gives chase: jump it, or sneak up behind it.",
   "Hold F at the vault to swipe. Hold F at a locked door to pick it.",
   "↑ at the stairs goes up, ↓ comes back down. Vents need a Plumber hat.",
   "You keep the loot only if you make it back out of the front door.",

@@ -34,8 +34,16 @@ export const CLIMB_TICKS = 40;
 const VENT_TICKS = 36;
 const DOOR_TICKS = 90;
 const LOCKPICK_DOOR_TICKS = 30;
-const GUARD_REACH = 46;
+const GUARD_REACH = 40;
 const GUARD_COOLDOWN = 90;
+/** How far ahead the guard can see, how long it stares before giving chase, and how long it chases. */
+export const GUARD_SIGHT = 260;
+const GUARD_ALERT_TICKS = 14;
+const GUARD_CHASE_SPEED = 6;
+const GUARD_CHASE_TICKS = 120;
+const GUARD_TURN_TICKS = 12;
+/** At each end of its beat the guard stops and looks around: the moment to slip past. */
+const GUARD_PAUSE_TICKS = 24;
 const FULL = 10_000; // loot in basis points of the capped amount
 
 export const Input = {
@@ -80,6 +88,8 @@ export type RaidEvent =
   | { t: number; type: "climb"; kind: "stairs" | "vent"; from: number; to: number }
   | { t: number; type: "door"; by: "pick" | "Lockpick" | "Rage Horns" }
   | { t: number; type: "caught" }
+  | { t: number; type: "spotted" }
+  | { t: number; type: "lost" }
   | { t: number; type: "guard-out"; by: string }
   | { t: number; type: "grab" }
   | { t: number; type: "drop"; lootBps: number }
@@ -87,7 +97,17 @@ export type RaidEvent =
   | { t: number; type: "special"; kind: string }
   | { t: number; type: "end"; result: RaidResultKind };
 
-export type RaidResultKind = "escaped" | "knocked-out" | "timeout";
+export type RaidResultKind = "escaped" | "knocked-out" | "caught" | "timeout";
+
+export type GuardMode = "patrol" | "pause" | "alert" | "chase" | "return";
+
+export interface GuardState {
+  x: number;
+  dir: 1 | -1;
+  mode: GuardMode;
+  /** ticks left in the current pause, alert or chase */
+  timer: number;
+}
 
 interface TrapState extends TrapPlacement {
   armed: boolean;
@@ -126,6 +146,7 @@ export interface RaidState {
   doorWork: number;
   guardOut: boolean;
   guardCooldown: number;
+  guard: GuardState;
   blinkCooldown: number;
   prevMask: number;
   traps: TrapState[];
@@ -152,16 +173,8 @@ const SCOUT_CHARGES: Record<Loadout["scout"], number> = {
 
 // ------------------------------------------------------------------ guard
 
-/** Guard x on a deterministic back-and-forth patrol. */
-export function guardX(t: number): number {
-  const span = GUARD.x1 - GUARD.x0;
-  const p = (t * GUARD.speed) % (span * 2);
-  return p <= span ? GUARD.x0 + p : GUARD.x1 - (p - span);
-}
-
-export function guardFacing(t: number): 1 | -1 {
-  const span = GUARD.x1 - GUARD.x0;
-  return (t * GUARD.speed) % (span * 2) < span ? 1 : -1;
+export function initialGuard(): GuardState {
+  return { x: GUARD.x0, dir: 1, mode: "patrol", timer: 0 };
 }
 
 // ------------------------------------------------------------------ layout
@@ -213,6 +226,7 @@ export function createRaid(setup: RaidSetup): RaidState {
     doorWork: 0,
     guardOut: false,
     guardCooldown: 0,
+    guard: initialGuard(),
     blinkCooldown: 0,
     prevMask: 0,
     traps: hideout.traps.map((tr) => ({ ...tr, armed: true, revealed: false, hunched: false })),
@@ -256,11 +270,12 @@ export function step(s: RaidState, setup: RaidSetup, mask: number): void {
     if (!tryClimb(s, setup, pressed)) move(s, setup, mask, pressed);
   }
 
+  moveGuard(s, setup);
   if (!s.climb && s.air === 0) {
     hunch(s, setup);
     triggerTraps(s, setup);
-    guard(s, setup);
   }
+  if (catchRaider(s, setup)) return;
 
   if (s.hp <= 0) {
     if (raider.special === "Second Life" && !s.secondLifeUsed) {
@@ -383,17 +398,100 @@ function move(s: RaidState, setup: RaidSetup, mask: number, pressed: number): vo
   }
 }
 
-function guard(s: RaidState, setup: RaidSetup): void {
-  if (s.guardOut || s.room !== GUARD.room || s.guardCooldown > 0) return;
-  if (setup.raider.body === "Disguise" && s.lootBps === 0) return; // looks like staff until it's carrying loot
-  const gx = guardX(s.t);
-  if (Math.abs(gx - s.x) > GUARD_REACH) return;
+/** The guard ignores a raider in Disguise until it carries loot, and everyone while knocked out or distracted. */
+function guardBlind(s: RaidState, setup: RaidSetup): boolean {
+  return s.guardOut || s.guardCooldown > 0 || (setup.raider.body === "Disguise" && s.lootBps === 0);
+}
+
+/** The raider is in the guard's room, on the floor, where the guard could reach it. */
+function inGuardRoom(s: RaidState): boolean {
+  return s.room === GUARD.room && !s.climb;
+}
+
+/** Patrol the beat, pause at each end, spot raiders in front, chase them, then walk back. */
+function moveGuard(s: RaidState, setup: RaidSetup): void {
+  const g = s.guard;
+  if (s.guardOut) return;
+  const blind = guardBlind(s, setup);
+  const ahead = inGuardRoom(s) && (s.x - g.x) * g.dir >= 0 && Math.abs(s.x - g.x) <= GUARD_SIGHT;
+  if (!blind && ahead && (g.mode === "patrol" || g.mode === "pause" || g.mode === "return")) {
+    g.mode = "alert";
+    g.timer = GUARD_ALERT_TICKS;
+    s.events.push({ t: s.t, type: "spotted" });
+    return;
+  }
+  switch (g.mode) {
+    case "patrol": {
+      g.x += g.dir * GUARD.speed;
+      if (g.x >= GUARD.x1 || g.x <= GUARD.x0) {
+        g.x = Math.max(GUARD.x0, Math.min(GUARD.x1, g.x));
+        g.mode = "pause";
+        g.timer = GUARD_PAUSE_TICKS;
+      }
+      return;
+    }
+    case "pause":
+      // looks back the way it came halfway through, then sets off
+      if (--g.timer === Math.floor(GUARD_PAUSE_TICKS / 2)) g.dir = -g.dir as 1 | -1;
+      if (g.timer <= 0) g.mode = "patrol";
+      return;
+    case "alert":
+      if (--g.timer <= 0) {
+        g.mode = "chase";
+        g.timer = GUARD_CHASE_TICKS;
+      }
+      return;
+    case "chase": {
+      if (blind || !inGuardRoom(s) || --g.timer <= 0) {
+        g.mode = "return";
+        s.events.push({ t: s.t, type: "lost" });
+        return;
+      }
+      if ((s.x - g.x) * g.dir < 0) {
+        // the raider got past (jumped over or ducked behind): skid, turn round, then chase again
+        g.dir = -g.dir as 1 | -1;
+        g.mode = "alert";
+        g.timer = GUARD_TURN_TICKS;
+        return;
+      }
+      const step = Math.min(GUARD_CHASE_SPEED, Math.abs(s.x - g.x));
+      g.x = Math.max(40, Math.min(ROOM_W - 40, g.x + g.dir * step));
+      return;
+    }
+    case "return": {
+      const home = Math.max(GUARD.x0, Math.min(GUARD.x1, g.x));
+      if (home === g.x) {
+        g.mode = "patrol";
+        return;
+      }
+      g.dir = home > g.x ? 1 : -1;
+      g.x += g.dir * Math.min(GUARD.speed, Math.abs(home - g.x));
+      return;
+    }
+  }
+}
+
+/** Getting grabbed by the guard ends the raid. Second Life saves you once. */
+function catchRaider(s: RaidState, setup: RaidSetup): boolean {
+  const g = s.guard;
+  if (guardBlind(s, setup) || !inGuardRoom(s) || s.air > 0) return false;
+  const dx = s.x - g.x;
+  if (Math.abs(dx) > GUARD_REACH) return false;
+  // a chasing guard grabs; otherwise only a raider walking into its face. Overtaking its back slips by.
+  const faceOn = dx * g.dir >= 0 && s.facing === -g.dir;
+  if (g.mode !== "chase" && !faceOn) return false;
   s.events.push({ t: s.t, type: "caught" });
-  s.guardCooldown = GUARD_COOLDOWN;
-  s.stun = Math.max(s.stun, scaled(45, setup));
-  s.hp -= 1;
-  // thrown back the way it came
-  s.x = Math.max(0, Math.min(ROOM_W, s.x + (s.x < gx ? -140 : 140)));
+  if (setup.raider.special === "Second Life" && !s.secondLifeUsed) {
+    s.secondLifeUsed = true;
+    s.events.push({ t: s.t, type: "second-life" });
+    s.guardCooldown = GUARD_COOLDOWN;
+    s.stun = Math.max(s.stun, scaled(30, setup));
+    s.x = Math.max(0, Math.min(ROOM_W, s.x + (dx < 0 ? -200 : 200)));
+    g.mode = "return";
+    return false;
+  }
+  end(s, "caught", 0);
+  return true;
 }
 
 /** Armed traps in the current room, ordered by distance in the facing direction. */
@@ -489,6 +587,7 @@ function special(s: RaidState, setup: RaidSetup): void {
     case "Decoy Coin": {
       if (s.room === GUARD.room && !s.guardOut) {
         s.guardCooldown = 180; // guard goes after the coin
+        s.guard.mode = "return";
         break;
       }
       const target = ahead(s, 320).find((i) => s.traps[i]!.kind === "Bait Coin");

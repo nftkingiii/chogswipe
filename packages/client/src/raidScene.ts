@@ -16,8 +16,6 @@ import {
   colOf,
   createRaid,
   floorOf,
-  guardFacing,
-  guardX,
   makeBot,
   step,
   type RaidEvent,
@@ -33,6 +31,7 @@ import { castReady, loadCast } from "./cast.js";
 import { isMuted, sfx, startMusic, stopMusic, toggleMute, unlockAudio } from "./sfx.js";
 import { finishRaid, type RaidStart, type SignedResult } from "./api.js";
 import { imageUrl, refresh } from "./session.js";
+import { portraitImage } from "./portraits.js";
 import { settle } from "./tx.js";
 import { formatUnits } from "viem";
 import type { InputLog, Traits } from "@chogswipe/sim";
@@ -40,6 +39,7 @@ import { bakeFx } from "./puppet.js";
 import { ChogSprite, makeChogTexture } from "./chogSprite.js";
 import { WINDOWS, bakeForeground, bakeRooms, bakeSkyline } from "./rooms.js";
 import { themeFor } from "./theme.js";
+import { addSurprises, type Surprises } from "./surprises.js";
 
 const TICK_MS = 1000 / TICK_HZ;
 
@@ -81,6 +81,8 @@ export class RaidScene extends Phaser.Scene {
   private hunchSprites: Phaser.GameObjects.Image[] = [];
   private guard!: Phaser.GameObjects.Image;
   private monGuard = false;
+  private guardMark!: Phaser.GameObjects.Text;
+  private surprises!: Surprises;
   private frontDoor!: Phaser.GameObjects.Image;
   private enterFade = { v: 0 };
   private exiting = false;
@@ -161,8 +163,6 @@ export class RaidScene extends Phaser.Scene {
   preload() {
     this.load.image("chog-sheet", "/sprites/chog.png");
     loadCast(this);
-    this.load.setCORS("anonymous");
-    if (!this.textures.exists(`portrait:${this.chog.id}`)) this.load.image(`portrait:${this.chog.id}`, imageUrl(this.chog));
   }
 
   create() {
@@ -175,9 +175,10 @@ export class RaidScene extends Phaser.Scene {
         };
     this.s = createRaid(this.setup);
 
-    bakeRooms(this, themeFor(this.loc.traits.Background, this.loc.rooms));
-    bakeSkyline(this, 1800, 880);
-    bakeForeground(this);
+    const theme = themeFor(this.loc.traits.Background, this.loc.rooms, this.loc.slug);
+    bakeRooms(this, theme);
+    const skyline = bakeSkyline(this, 1800, 880, theme.decor?.sky);
+    bakeForeground(this, theme.decor);
     bakeVault(this);
     bakeTraps(this);
     bakeSack(this);
@@ -192,7 +193,7 @@ export class RaidScene extends Phaser.Scene {
       if (!win) continue;
       const r = Number(room);
       const [wx, wy, ww, wh] = win;
-      const img = this.add.image(colOf(r) * ROOM_PX + wx - 4, (FLOORS - 1 - floorOf(r)) * VIEW_H + wy, "skyline").setOrigin(0, 0);
+      const img = this.add.image(colOf(r) * ROOM_PX + wx - 4, (FLOORS - 1 - floorOf(r)) * VIEW_H + wy, skyline).setOrigin(0, 0);
       this.skyPatches.push({ img, w: ww, h: wh });
     }
     for (let r = 0; r < ROOMS; r++) {
@@ -210,6 +211,12 @@ export class RaidScene extends Phaser.Scene {
       this.guard = this.add.image(0, floorY(GUARD.room) + 6, "guard_0").setOrigin(0.5, 1).setScale(0.9);
       this.boil(this.guard, "guard");
     }
+    // "!" when it spots the raider, "?" when it loses them
+    this.guardMark = this.add
+      .text(0, 0, "!", { fontFamily: FONT_TITLE, fontSize: "64px", color: ACCENT, stroke: INK, strokeThickness: 8 })
+      .setOrigin(0.5, 1)
+      .setDepth(40)
+      .setAlpha(0);
 
     this.s.traps.forEach((tr, i) => {
       const img = this.add.image(worldX(tr.room, tr.x), floorY(tr.room) + 8, `trap:${tr.kind}_0`).setOrigin(0.5, 1).setAlpha(0);
@@ -224,6 +231,7 @@ export class RaidScene extends Phaser.Scene {
     this.boil(this.add.image(worldX(1, 40), floorY(1) + 40, "fgplant_0").setOrigin(0.5, 1).setDepth(5).setAlpha(0.95), "fgplant");
     this.boil(this.add.image(worldX(3, 940), floorY(3) + 40, "fgplant_0").setOrigin(0.5, 1).setDepth(5).setAlpha(0.95).setFlipX(true), "fgplant");
     this.motes();
+    this.surprises = addSurprises(this, this.loc.slug, worldX);
 
     // the front door: open as the Chog sneaks in, then swings shut
     this.frontDoor = this.add.image(worldX(0, 0) + 70, floorY(0) + 4, "frontdoor-open_0").setOrigin(0.5, 1);
@@ -291,7 +299,7 @@ export class RaidScene extends Phaser.Scene {
 
     // bottom-left: who you are and your gadgets
     fixed(this.add.graphics()).fillStyle(0x1c1618, 0.9).fillRoundedRect(16, H - 112, 560, 96, 18);
-    fixed(this.add.image(64, H - 64, `portrait:${this.chog.id}`).setDisplaySize(76, 76));
+    fixed(portraitImage(this, 64, H - 64, `portrait:${this.chog.id}`, imageUrl(this.chog), 76));
     fixed(this.add.graphics()).lineStyle(4, 0xf3eadb, 1).strokeRoundedRect(25, H - 103, 78, 78, 12);
     fixed(this.add.text(118, H - 104, `Chog #${this.chog.id}`, { fontFamily: FONT_TITLE, fontSize: "22px", color: PAPER }));
     const l = this.setup.raider;
@@ -461,12 +469,22 @@ export class RaidScene extends Phaser.Scene {
         this.burst(spr.x, spr.y - 30, 0xe0528a);
         break;
       }
+      case "spotted":
+        sfx.spotted();
+        this.toast("SPOTTED! RUN!", ACCENT);
+        this.guardMark.setText("!").setColor(ACCENT).setAlpha(1).setScale(0.4);
+        this.tweens.add({ targets: this.guardMark, scale: 1, duration: 260, ease: "Back.Out" });
+        break;
+      case "lost":
+        this.guardMark.setText("?").setColor("#f0c35a").setAlpha(1).setScale(1);
+        this.tweens.add({ targets: this.guardMark, alpha: 0, delay: 700, duration: 300 });
+        break;
       case "caught":
         sfx.caught();
-        this.hitStop = 120;
-        cam.shake(220, 0.012);
-        this.toast("SECURITY!", ACCENT);
-        this.tweens.add({ targets: this.guard, scaleY: 1.05, yoyo: true, duration: 120 });
+        this.hitStop = 160;
+        cam.shake(260, 0.014);
+        this.toast("GOTCHA!", ACCENT);
+        this.tweens.add({ targets: this.guard, scaleX: this.guard.scaleX * 1.15, scaleY: this.guard.scaleY * 1.12, yoyo: true, duration: 140, repeat: 1 });
         break;
       case "guard-out":
         this.toast("Guard knocked out", "#7ec4a8");
@@ -515,7 +533,7 @@ export class RaidScene extends Phaser.Scene {
         stopMusic();
         if (e.result === "escaped") sfx.win();
         else sfx.lose();
-        this.toast(e.result === "escaped" ? "ESCAPED!" : e.result === "knocked-out" ? "KNOCKED OUT" : "TIME'S UP", e.result === "escaped" ? "#f0c35a" : ACCENT, 1200);
+        this.toast(e.result === "escaped" ? "ESCAPED!" : e.result === "knocked-out" ? "KNOCKED OUT" : e.result === "caught" ? "CAUGHT BY THE GUARD" : "TIME'S UP", e.result === "escaped" ? "#f0c35a" : ACCENT, 1200);
         if (e.result === "escaped" && !this.live && !this.replay) markCleared(this.loc.slug);
         if (e.result === "escaped") this.exitThroughDoor();
         if (this.live) {
@@ -556,7 +574,7 @@ export class RaidScene extends Phaser.Scene {
     card.fillStyle(0xf3eadb, 1).fillRoundedRect(-300, -170, 600, 350, 26);
     card.lineStyle(6, 0x1c1618, 1).strokeRoundedRect(-300, -170, 600, 350, 26);
     const head = this.add.image(-190, 40, "chog-raider", won ? "win" : "ko").setOrigin(0.5, 1).setScale(0.75);
-    const title = this.add.text(-90, -130, won ? "CLEAN SWIPE" : "CAUGHT", { fontFamily: FONT_TITLE, fontSize: "46px", color: won ? INK : ACCENT });
+    const title = this.add.text(-90, -130, won ? "CLEAN SWIPE" : result === "timeout" ? "TIME'S UP" : result === "knocked-out" ? "KNOCKED OUT" : "CAUGHT", { fontFamily: FONT_TITLE, fontSize: "46px", color: won ? INK : ACCENT });
     const amount = this.add.text(-90, -70, won ? `+${loot.toLocaleString()} $CHOG` : "+0 $CHOG", { fontFamily: FONT_TITLE, fontSize: "40px", color: "#c79a2a" });
     const s = this.s;
     const secs = Math.round(s.t / TICK_HZ);
@@ -619,7 +637,7 @@ export class RaidScene extends Phaser.Scene {
     const rules: [string, boolean, string][] = [
       ["start", s.t > 20, "The vault is upstairs. Press Q to scout this room for traps."],
       ["stairs", LINKS.some((l) => l.kind === "stairs" && near(l.a.room, l.a.x, 140)) && s.lootBps === 0, "Press ↑ at the foot of the stairs to go up."],
-      ["guard", s.room === GUARD.room && !s.guardOut && s.lootBps === 0, "A guard! Jump over it with SPACE, or slip past when it turns."],
+      ["guard", s.room === GUARD.room && !s.guardOut && s.lootBps === 0, "A guard! If it sees you, it chases you. Sneak up behind it, or jump over it with SPACE."],
       ["door", s.room === LOCKED_DOOR.left && s.x > ROOM_W - 220 && !s.doorOpen, "Locked. Hold F to pick it, or bring Rage Horns."],
       ["vault", near(VAULT_ROOM, VAULT_X, 160) && s.lootBps === 0, "There it is. Hold F to swipe the loot!"],
       ["home", s.lootBps > 0, "Now get out the front door before the clock runs out!"],
@@ -710,15 +728,25 @@ export class RaidScene extends Phaser.Scene {
     }
 
     // guard patrol
-    this.guard.setX(worldX(GUARD.room, guardX(s.t))).setFlipX(guardFacing(s.t) < 0);
+    const g = s.guard;
+    const chasing = g.mode === "chase" && !s.guardOut;
+    this.guard.setX(worldX(GUARD.room, g.x)).setFlipX(g.dir < 0);
     if (this.monGuard) {
-      // bob while patrolling, topple when knocked out
-      this.guard.setAngle(s.guardOut ? 80 : Math.sin(s.t * 0.4) * 3).setAlpha(s.guardOut ? 0.7 : 1);
+      // bob while patrolling, lean in and bounce when chasing, topple when knocked out
+      const lean = chasing ? g.dir * 10 + Math.sin(s.t * 0.9) * 5 : Math.sin(s.t * 0.4) * 3;
+      this.guard.setAngle(s.guardOut ? 80 : lean).setAlpha(s.guardOut ? 0.7 : 1);
       // Mouch flies: hover above the floor unless knocked out
-      const hover = this.loc.guard === "mouch" && !s.guardOut ? -70 + Math.sin(s.t * 0.3) * 14 : 0;
+      const hover = this.loc.guard === "mouch" && !s.guardOut ? -70 + Math.sin(s.t * 0.3) * 14 : chasing ? -Math.abs(Math.sin(s.t * 0.6)) * 14 : 0;
       this.guard.setY(floorY(GUARD.room) + 10 + hover);
+    } else {
+      this.guard.setAngle(chasing ? g.dir * 8 : 0).setY(floorY(GUARD.room) + 6 - (chasing ? Math.abs(Math.sin(s.t * 0.6)) * 12 : 0));
     }
+    const markY = this.guard.y - this.guard.displayHeight - 6;
+    this.guardMark.setPosition(this.guard.x, markY);
+    if ((g.mode === "alert" || chasing) && !s.guardOut && !s.result) this.guardMark.setText("!").setColor(ACCENT).setAlpha(1);
+    else if (this.guardMark.text === "!") this.guardMark.setAlpha(0);
     this.hints(s);
+    this.surprises.update(s);
     const moving = (s.prevMask & (Input.LEFT | Input.RIGHT)) !== 0 && !s.climb && s.stun === 0;
     if (moving && s.air === 0 && s.t % 9 === 0 && s.t !== this.lastStepT) {
       this.lastStepT = s.t;

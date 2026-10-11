@@ -30,11 +30,14 @@ import {
   wanted,
   type RC,
 } from "./art.js";
+import { paintFloor, paintSky, paintWall, type Decor, type SkyKind } from "./decor.js";
 
 export interface Theme {
   walls: string[]; // one tint per room
   accent: string;
   names?: readonly string[]; // room signs
+  /** a lore heist's own walls, floors, view and furniture; player hideouts have none */
+  decor?: Decor;
 }
 
 export const DEFAULT_THEME: Theme = {
@@ -56,26 +59,35 @@ function bakeRoom(scene: Phaser.Scene, room: number, theme: Theme) {
   const H = VIEW_H;
   const col = colOf(room);
   const upper = room >= COLS;
+  const decor = theme.decor;
   bake(scene, `room${room}`, W, H, (ctx, rc, seed) => {
+    const paint = { ctx, rc, s: seed, wall: theme.walls[room]!, accent: theme.accent };
     ctx.fillStyle = theme.walls[room]!;
     ctx.fillRect(0, 0, W, FLOOR_Y);
-    for (let x = 40; x < W; x += 64) {
-      rc.line(x, 70, x, FLOOR_Y - 70, ink(seed + x, { strokeWidth: 1.4, stroke: "rgba(28,22,24,0.18)", roughness: 2.2 }));
+    if (decor) paintWall(paint, decor.wall);
+    else {
+      for (let x = 40; x < W; x += 64) {
+        rc.line(x, 70, x, FLOOR_Y - 70, ink(seed + x, { strokeWidth: 1.4, stroke: "rgba(28,22,24,0.18)", roughness: 2.2 }));
+      }
     }
     rc.line(0, FLOOR_Y - 120, W, FLOOR_Y - 120, ink(seed + 1, { strokeWidth: 3 }));
-    ctx.fillStyle = "#2a2124";
+    ctx.fillStyle = decor?.ceiling ?? "#2a2124";
     ctx.fillRect(0, 0, W, 58);
     rc.line(0, 58, W, 58, ink(seed + 2, { strokeWidth: 5 }));
-    ctx.fillStyle = upper ? "#a98462" : "#b8916a";
-    ctx.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
-    rc.line(0, FLOOR_Y, W, FLOOR_Y, ink(seed + 3, { strokeWidth: 6 }));
-    for (let y = FLOOR_Y + 34; y < H; y += 34) rc.line(0, y, W, y, ink(seed + y, { strokeWidth: 2, stroke: "rgba(28,22,24,0.45)" }));
-    ctx.fillStyle = "rgba(28,22,24,0.12)";
-    ctx.fillRect(0, FLOOR_Y - 18, W, 18);
+    if (decor) paintFloor(paint, decor.floor, upper);
+    else {
+      ctx.fillStyle = upper ? "#a98462" : "#b8916a";
+      ctx.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
+      rc.line(0, FLOOR_Y, W, FLOOR_Y, ink(seed + 3, { strokeWidth: 6 }));
+      for (let y = FLOOR_Y + 34; y < H; y += 34) rc.line(0, y, W, y, ink(seed + y, { strokeWidth: 2, stroke: "rgba(28,22,24,0.45)" }));
+      ctx.fillStyle = "rgba(28,22,24,0.12)";
+      ctx.fillRect(0, FLOOR_Y - 18, W, 18);
+    }
 
     const win = WINDOWS[room];
-    if (win) window_(ctx, rc, seed + 400, win);
-    props(ctx, rc, seed, room, theme);
+    if (win) window_(ctx, rc, seed + 400, win, decor?.frame ?? "#8a5a3c", decor ? decor.curtain : "#c96a5a");
+    if (decor) decor.rooms[room]!(paint);
+    else props(ctx, rc, seed, room, theme);
     for (const l of LINKS) drawLink(ctx, rc, seed, room, l);
 
     // outer walls and partitions
@@ -85,9 +97,10 @@ function bakeRoom(scene: Phaser.Scene, room: number, theme: Theme) {
     if (col < COLS - 1) partition(rc, ctx, seed + 90, W - 60, true, room === LOCKED_DOOR.left);
 
     sign(ctx, rc, seed + 95, (theme.names ?? ROOM_NAMES)[room]!, room === 5 ? 520 : 470);
-    if (room === 5) {
+    const dim = (room === 5 ? 0.28 : 0) + (decor?.dim?.[room] ?? 0);
+    if (dim > 0) {
       // the vault room is dim: harder to spot traps without scouting
-      ctx.fillStyle = "rgba(20,14,30,0.28)";
+      ctx.fillStyle = `rgba(20,14,30,${Math.min(0.42, dim)})`;
       ctx.fillRect(0, 0, W, H);
     }
     vignette(ctx, W, H);
@@ -140,28 +153,31 @@ export const WINDOWS: Record<number, [number, number, number, number] | undefine
   4: [220, 140, 180, 140],
 };
 
-function window_(ctx: CanvasRenderingContext2D, rc: RC, seed: number, [x, y, w, h]: [number, number, number, number]) {
+function window_(ctx: CanvasRenderingContext2D, rc: RC, seed: number, [x, y, w, h]: [number, number, number, number], wood: string, curtain: string | null) {
   ctx.save();
   ctx.globalCompositeOperation = "destination-out";
   ctx.fillStyle = "#000"; // fully opaque, so the pane is fully erased
   ctx.fillRect(x, y, w, h);
   ctx.restore();
   rc.rectangle(x - 10, y - 10, w + 20, h + 20, ink(seed, { strokeWidth: 5 }));
-  rc.rectangle(x - 4, y - 4, w + 8, h + 8, ink(seed + 1, { stroke: "#8a5a3c", strokeWidth: 8, roughness: 1 }));
-  rc.line(x + w / 2, y, x + w / 2, y + h, ink(seed + 2, { stroke: "#8a5a3c", strokeWidth: 7, roughness: 1 }));
-  rc.line(x, y + h / 2, x + w, y + h / 2, ink(seed + 3, { stroke: "#8a5a3c", strokeWidth: 7, roughness: 1 }));
-  rc.rectangle(x - 20, y + h + 6, w + 40, 16, ink(seed + 4, { fill: "#8a5a3c", fillStyle: "solid", strokeWidth: 3 }));
-  // curtains
-  rc.path(`M ${x - 26} ${y - 16} C ${x - 6} ${y + h * 0.4}, ${x - 30} ${y + h * 0.8}, ${x - 10} ${y + h + 4} L ${x - 40} ${y + h + 4} L ${x - 40} ${y - 16} Z`, ink(seed + 5, { fill: "#c96a5a", fillStyle: "solid", strokeWidth: 3 }));
-  rc.path(`M ${x + w + 26} ${y - 16} C ${x + w + 6} ${y + h * 0.4}, ${x + w + 30} ${y + h * 0.8}, ${x + w + 10} ${y + h + 4} L ${x + w + 40} ${y + h + 4} L ${x + w + 40} ${y - 16} Z`, ink(seed + 6, { fill: "#c96a5a", fillStyle: "solid", strokeWidth: 3 }));
+  rc.rectangle(x - 4, y - 4, w + 8, h + 8, ink(seed + 1, { stroke: wood, strokeWidth: 8, roughness: 1 }));
+  rc.line(x + w / 2, y, x + w / 2, y + h, ink(seed + 2, { stroke: wood, strokeWidth: 7, roughness: 1 }));
+  rc.line(x, y + h / 2, x + w, y + h / 2, ink(seed + 3, { stroke: wood, strokeWidth: 7, roughness: 1 }));
+  rc.rectangle(x - 20, y + h + 6, w + 40, 16, ink(seed + 4, { fill: wood, fillStyle: "solid", strokeWidth: 3 }));
+  if (!curtain) return;
+  rc.path(`M ${x - 26} ${y - 16} C ${x - 6} ${y + h * 0.4}, ${x - 30} ${y + h * 0.8}, ${x - 10} ${y + h + 4} L ${x - 40} ${y + h + 4} L ${x - 40} ${y - 16} Z`, ink(seed + 5, { fill: curtain, fillStyle: "solid", strokeWidth: 3 }));
+  rc.path(`M ${x + w + 26} ${y - 16} C ${x + w + 6} ${y + h * 0.4}, ${x + w + 30} ${y + h * 0.8}, ${x + w + 10} ${y + h + 4} L ${x + w + 40} ${y + h + 4} L ${x + w + 40} ${y - 16} Z`, ink(seed + 6, { fill: curtain, fillStyle: "solid", strokeWidth: 3 }));
 }
 
-/** Night city seen through the windows; drawn once and scrolled slower than the rooms. */
-export function bakeSkyline(scene: Phaser.Scene, w: number, h: number) {
+/** The view through the windows (night city unless the heist has its own); drawn once and scrolled slower than the rooms. Returns its texture key. */
+export function bakeSkyline(scene: Phaser.Scene, w: number, h: number, sky: SkyKind = "city"): string {
+  const key = `skyline:${sky}`;
+  if (scene.textures.exists(key)) return key;
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
   const draw = (ctx: CanvasRenderingContext2D, rc: RC, s: number) => {
+    if (sky !== "city") return paintSky(ctx, rc, s, sky, w, h);
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, "#1d1438");
     g.addColorStop(0.6, "#3a2766");
@@ -204,13 +220,14 @@ export function bakeSkyline(scene: Phaser.Scene, w: number, h: number) {
     ctx.shadowBlur = 0;
   };
   draw(c.getContext("2d")!, rough.canvas(c), 4242);
-  if (scene.textures.exists("skyline")) return;
-  scene.textures.addCanvas("skyline", c);
+  scene.textures.addCanvas(key, c);
+  return key;
 }
 
-/** Foreground plant that the Chog walks behind, for depth. */
-export function bakeForeground(scene: Phaser.Scene) {
-  bake(scene, "fgplant", 220, 300, (_ctx, rc, s) => {
+/** Foreground piece that the Chog walks behind, for depth: the heist's own, or a potted plant. */
+export function bakeForeground(scene: Phaser.Scene, decor?: Decor) {
+  bake(scene, "fgplant", 220, 300, (ctx, rc, s) => {
+    if (decor?.fg) return decor.fg(ctx, rc, s);
     rc.polygon(
       [
         [70, 210],
@@ -223,7 +240,7 @@ export function bakeForeground(scene: Phaser.Scene) {
     for (let i = -3; i <= 3; i++) {
       rc.ellipse(110 + i * 26, 130 - Math.abs(i) * -14, 40, 170, ink(s + 10 + i, { fill: "#2f4a2a", fillStyle: "solid", strokeWidth: 3 }));
     }
-  });
+  }, true);
 }
 
 // ------------------------------------------------------------- structure

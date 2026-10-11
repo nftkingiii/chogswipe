@@ -40,7 +40,7 @@ export class HistoryScene extends Phaser.Scene {
     const result = r.outcome?.result ?? "unfinished";
     this.add.text(66, y + 12, `Chog #${r.raiderToken}`, { fontFamily: FONT_TITLE, fontSize: "22px", color: INK });
     this.add.text(66, y + 42, when, { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70" });
-    this.add.text(300, y + 22, result === "escaped" ? "escaped" : result === "knocked-out" ? "knocked out by your traps" : result === "timeout" ? "ran out of time" : "left mid-raid", {
+    this.add.text(300, y + 22, result === "escaped" ? "escaped" : result === "knocked-out" ? "knocked out by your traps" : result === "caught" ? "caught by your guard" : result === "timeout" ? "ran out of time" : "left mid-raid", {
       fontFamily: FONT_BODY,
       fontSize: "21px",
       color: result === "escaped" ? "#c0392b" : "#3fa34d",

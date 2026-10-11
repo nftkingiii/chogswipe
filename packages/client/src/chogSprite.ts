@@ -145,7 +145,7 @@ export class ChogSprite {
   }
 
   poseOf(s: RaidState): Pose {
-    if (s.result === "knocked-out") return "ko";
+    if (s.result === "knocked-out" || s.result === "caught") return "ko";
     if (this.won || s.result === "escaped") return "win";
     if (s.stun > 0) return "stunned";
     // climbing stairs: step up with the run frames (carrying the sack if we have it)

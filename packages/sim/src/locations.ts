@@ -34,7 +34,7 @@ export const LOCATIONS: Location[] = [
       { room: 4, x: 640, kind: "Tripwire" },
       { room: 5, x: 300, kind: "Gum Snare" },
     ],
-    rooms: ["Lounge", "Library", "Kitchen", "Study", "Bedroom", "Vault"],
+    rooms: ["Lily Lounge", "Reed Library", "Fly Kitchen", "Toad's Study", "Lily-Pad Bed", "Savings Pond"],
     loot: "Toad's lily-pad savings",
     unlockAfter: null,
     guard: "fwog",
