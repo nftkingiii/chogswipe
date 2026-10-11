@@ -161,7 +161,7 @@ export class RaidScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("chog-sheet", "/sprites/chog.png");
+    this.load.image("chog-sheet", "/sprites/chog.webp");
     loadCast(this);
   }
 

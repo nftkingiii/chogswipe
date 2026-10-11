@@ -1,7 +1,7 @@
-// The loading page in index.html: shown for at least MIN_MS, and until the game's first screen is ready.
+// The loading page in index.html: shown until the game's first screen is ready (and at least MIN_MS, so it never just flashes).
 import type Phaser from "phaser";
 
-const MIN_MS = 3000;
+const MIN_MS = 1200;
 const q = new URLSearchParams(location.search);
 // debug: ?introAt=<ms> freezes the loading heist at that moment and keeps the loader up
 const FREEZE = q.has("introAt") ? Number(q.get("introAt")) : null;

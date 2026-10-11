@@ -1,7 +1,7 @@
 """Cut the monanimal cast sheet (five characters on white) into a sprite atlas.
 
 python tools/cut_cast.py notes/lore-art/monanimals.png
-Writes packages/client/public/sprites/monanimals.png and .json, frames in sheet order:
+Writes packages/client/public/sprites/monanimals.webp and .json, frames in sheet order:
 molandak, moyaki, mouch, salmonad, mongrod.
 """
 import json
@@ -53,6 +53,6 @@ for i, (name, b) in enumerate(zip(NAMES, keep)):
     print(name, cut.size)
 
 out = ROOT / "packages/client/public/sprites"
-atlas.save(out / "monanimals.png")
+atlas.save(out / "monanimals.webp", "WEBP", quality=90, method=6)  # WebP: a fifth of the PNG size
 json.dump({"frames": frames, "source": sys.argv[1]}, open(out / "monanimals.json", "w"), indent=1)
-print("wrote", out / "monanimals.png")
+print("wrote", out / "monanimals.webp")

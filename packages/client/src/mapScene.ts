@@ -9,7 +9,7 @@ import { nav } from "./nav.js";
 import { themeFor } from "./theme.js";
 import { castReady, loadCast } from "./cast.js";
 import { advance, onboardStep } from "./onboarding.js";
-import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, centerStage, panel, stageLeft } from "./ui.js";
+import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, centerStage, panel, stageLeft, startHeist } from "./ui.js";
 
 // node positions along the path, left to right, winding up and down
 const NODES: [number, number][] = [
@@ -134,7 +134,7 @@ export class MapScene extends Phaser.Scene {
     keep(
       this.add.text(x + 20, blurb.y + blurb.height + 14, facts.join("\n"), { fontFamily: FONT_BODY, fontSize: "17px", color: INK, lineSpacing: 4, wordWrap: { width: w - 40 } }),
     );
-    keep(button(this, x + w / 2, y + h - 46, w - 40, "Start heist", () => this.scene.start("raid", { chog: this.chog, location: loc })));
+    keep(button(this, x + w / 2, y + h - 46, w - 40, "Start heist", () => startHeist(this, { chog: this.chog, location: loc })));
   }
 
   /** The guide's hint box. Molandak's art goes in the frame once the monanimal sheet is ready. */

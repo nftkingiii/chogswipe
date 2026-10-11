@@ -30,7 +30,17 @@ const app = await buildApp({
 });
 // serve the built game from the same origin, so wallet sign-in and the API share one domain
 const dist = fileURLToPath(new URL("../../client/dist", import.meta.url));
-if (existsSync(dist)) await app.register(fastifyStatic, { root: dist, prefix: "/" });
+// the client build ships .br/.gz copies (client/scripts/compress.mjs); hashed assets never change, so cache them for good
+if (existsSync(dist)) {
+  await app.register(fastifyStatic, {
+    root: dist,
+    prefix: "/",
+    preCompressed: true,
+    setHeaders: (res, path) => {
+      res.header("Cache-Control", /[\\/]assets[\\/]/.test(path) ? "public, max-age=31536000, immutable" : "public, max-age=300");
+    },
+  });
+}
 
 await app.listen({ port: config.port, host: "0.0.0.0" });
 console.log(`referee listening on :${config.port}`);

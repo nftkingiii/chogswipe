@@ -26,7 +26,7 @@ import { bakeTraps } from "./art.js";
 import { nav } from "./nav.js";
 import { refresh, selectedChog, session } from "./session.js";
 import { GADGET_INFO } from "./gadgetInfo.js";
-import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground } from "./ui.js";
+import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, startHeist } from "./ui.js";
 
 const BOX_W = 360;
 const BOX_H = 170;
@@ -166,7 +166,7 @@ export class HideoutScene extends Phaser.Scene {
       guard: "fwog",
       loot: "nothing, it's a test",
     };
-    this.scene.start("raid", { chog, location: loc });
+    startHeist(this, { chog, location: loc });
   }
 }
 

@@ -119,7 +119,12 @@ export const TABS: [key: string, label: string][] = [
  * Logo, workflow tabs and the wallet chip, shared by every menu screen.
  * Tabs that need a signed-in holder stay visible and explain themselves when opened.
  */
-export function topNav(scene: Phaser.Scene, active: string, wallet: { label: string; onClick: () => void; disabled?: boolean }) {
+export function topNav(
+  scene: Phaser.Scene,
+  active: string,
+  wallet: { label: string; onClick: () => void; disabled?: boolean },
+  onHelp?: () => void,
+) {
   const W = DESIGN_W;
   scene.add.text(40, 22, "CHOGSWIPE", { fontFamily: FONT_TITLE, fontSize: "40px", color: INK });
   let x = 312;
@@ -153,6 +158,23 @@ export function topNav(scene: Phaser.Scene, active: string, wallet: { label: str
     .setInteractive({ useHandCursor: !wallet.disabled });
   if (wallet.disabled) chip.setAlpha(0.4);
   chip.on("pointerdown", wallet.onClick);
+  if (onHelp) {
+    const help = scene.add
+      .text(chip.x - chip.width - 10, 30, "HOW TO PLAY", {
+        fontFamily: FONT_TITLE,
+        fontSize: "18px",
+        color: INK,
+        backgroundColor: "#f0c35a",
+        padding: { x: 12, y: 8 },
+      })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+    help.on("pointerdown", () => {
+      unlockAudio();
+      sfx.click();
+      onHelp();
+    });
+  }
   return chip;
 }
 
@@ -189,4 +211,17 @@ export function roundTexture(scene: Phaser.Scene, key: string, size = 128): stri
   ctx.drawImage(img, 0, 0, size, size);
   scene.textures.addCanvas(out, c);
   return out;
+}
+
+/**
+ * Start a heist. Building the rooms takes a moment on slower phones, so show that something is
+ * happening first, let that frame paint, then switch scenes.
+ */
+export function startHeist(scene: Phaser.Scene, data: object) {
+  const cam = scene.cameras.main;
+  const cx = cam.scrollX + scene.scale.width / 2, cy = cam.scrollY + scene.scale.height / 2;
+  scene.add.rectangle(cx, cy, scene.scale.width + 40, scene.scale.height + 40, INK_N, 0.7).setDepth(500).setInteractive();
+  scene.add.text(cx, cy - 10, "SNEAKING IN…", { fontFamily: FONT_TITLE, fontSize: "56px", color: PAPER }).setOrigin(0.5).setDepth(501);
+  scene.add.text(cx, cy + 50, "picking the lock", { fontFamily: FONT_BODY, fontSize: "24px", color: "#f0c35a" }).setOrigin(0.5).setDepth(501);
+  scene.time.delayedCall(60, () => scene.scene.start("raid", data));
 }

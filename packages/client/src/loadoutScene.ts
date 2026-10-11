@@ -11,6 +11,7 @@ import { nav } from "./nav.js";
 import { advance, onboardStep } from "./onboarding.js";
 import { castReady, loadCast } from "./cast.js";
 import { portraitImage } from "./portraits.js";
+import { guideSeen, showGuide } from "./guide.js";
 import { ACCENT_N, DESIGN_W, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, poseState } from "./ui.js";
 
 const TIER_COLOR: Record<string, string> = {
@@ -41,7 +42,7 @@ export class LoadoutScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("chog-sheet", "/sprites/chog.png");
+    this.load.image("chog-sheet", "/sprites/chog.webp");
     loadCast(this);
     // NFT portraits load in the background (portraitImage), so a slow IPFS gateway never blanks the screen
   }
@@ -80,6 +81,7 @@ export class LoadoutScene extends Phaser.Scene {
     });
     if (onboardStep() === "pick") this.welcome();
     this.select(this.selected);
+    if (!guideSeen()) showGuide(this); // first visit: how to play, once
   }
 
   /** First visit: Molandak explains the one thing to do here. */

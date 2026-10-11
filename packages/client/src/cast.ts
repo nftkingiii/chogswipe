@@ -6,7 +6,7 @@ export type CastName = (typeof CAST)[number];
 const FRAME = 300;
 
 export function loadCast(scene: Phaser.Scene) {
-  if (!scene.textures.exists("cast")) scene.load.image("cast", "/sprites/monanimals.png");
+  if (!scene.textures.exists("cast")) scene.load.image("cast", "/sprites/monanimals.webp");
 }
 
 /** Register one frame per character. Returns false if the sheet isn't available. */

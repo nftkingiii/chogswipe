@@ -2,6 +2,7 @@
 import Phaser from "phaser";
 import { HOLDER_MODE, goDemo, goLive, session } from "./session.js";
 import { DESIGN_W, notice, topNav } from "./ui.js";
+import { showGuide } from "./guide.js";
 import { onAccountsChanged } from "./wallet.js";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -43,7 +44,7 @@ export function nav(scene: Phaser.Scene, active: string) {
         scene.time.delayedCall(4000, () => msg.destroy());
       }
     },
-  });
+  }, () => showGuide(scene));
   if (!live) {
     scene.add
       .text(DESIGN_W - 40, 76, HOLDER_MODE ? "DEMO · connect a wallet holding a Chog to play for real" : "PUBLIC DEMO · open to everyone · holder mode launches soon", {
