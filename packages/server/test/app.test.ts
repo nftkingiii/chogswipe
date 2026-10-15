@@ -99,6 +99,19 @@ describe("referee", () => {
     expect((await app.inject({ method: "POST", url: "/auth/verify", payload: { message: bad, signature: sig } })).statusCode).toBe(400);
   });
 
+  it("accepts sign-in from each listed domain while a domain moves, and no other", async () => {
+    app = await buildApp({ chain, store: new MemoryStore(), signer: referee, chainId: 143, allowedOrigin: "https://chogswipe.xyz, https://chogswipe.up.railway.app", now: () => clock });
+    const tryDomain = async (domain: string) => {
+      const { nonce } = (await app.inject({ method: "GET", url: "/auth/nonce" })).json();
+      const message = createSiweMessage({ address: player.address, chainId: 143, domain, nonce, uri: `https://${domain}`, version: "1", issuedAt: new Date(clock) });
+      const signature = await player.signMessage({ message });
+      return (await app.inject({ method: "POST", url: "/auth/verify", payload: { message, signature } })).statusCode;
+    };
+    expect(await tryDomain("chogswipe.xyz")).toBe(200);
+    expect(await tryDomain("chogswipe.up.railway.app")).toBe(200);
+    expect(await tryDomain("evil.example")).toBe(400);
+  });
+
   it("only the holder can set a hideout, and layouts are validated", async () => {
     const token = await signIn();
     const notMine = await app.inject({ method: "PUT", url: "/hideouts/2", headers: authed(token), payload: { traps: [] } });

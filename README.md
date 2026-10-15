@@ -4,6 +4,8 @@ A Spy vs Spy-style trap-and-raid game for Chog holders on Monad.
 
 Your Chog guards a booby-trapped hideout holding $CHOG while you're offline, and raids other holders' hideouts to swipe theirs. Its traits decide its gadgets; its rarity tier decides how strong they are.
 
+Play the public demo: https://chogswipe.xyz
+
 Status: in development for Chogathon 2026.
 
 ## Onchain

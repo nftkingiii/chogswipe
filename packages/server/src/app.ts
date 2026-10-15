@@ -30,6 +30,7 @@ export interface AppDeps {
   store: Store;
   signer: Signer;
   chainId: number;
+  /** the site's origin; a comma-separated list while a domain moves (e.g. the new domain and the railway.app one) */
   allowedOrigin: string;
   now?: () => number;
   /** Holder mode: wallet sign-in, hideouts, raids and settlement. Off during the public demo. */
@@ -83,7 +84,9 @@ export async function buildApp(deps: AppDeps) {
   const now = deps.now ?? Date.now;
   // behind Railway's proxy, so req.ip is the player's address for the rate limits
   const app = Fastify({ logger: false, bodyLimit: 512 * 1024, trustProxy: true });
-  await app.register(cors, { origin: deps.allowedOrigin });
+  const origins = deps.allowedOrigin.split(",").map((o) => o.trim()).filter(Boolean);
+  const signInDomains = new Set(origins.map((o) => new URL(o).host));
+  await app.register(cors, { origin: origins });
 
   // public demo: the holder API stays shut until launch, whatever a client sends
   if (deps.holderMode === false) {
@@ -213,12 +216,14 @@ export async function buildApp(deps: AppDeps) {
     const { message, signature } = req.body ?? ({} as never);
     if (typeof message !== "string" || typeof signature !== "string") throw new HttpError(400, "message and signature required");
     const parsed = parseSiweMessage(message);
-    const domain = new URL(deps.allowedOrigin).host;
+    // the message must name one of this site's own domains, so a signature made for another site can't sign in here
     if (
       !parsed.address ||
       !parsed.nonce ||
+      !parsed.domain ||
+      !signInDomains.has(parsed.domain) ||
       parsed.chainId !== deps.chainId ||
-      !validateSiweMessage({ message: parsed, domain, time: new Date(now()) })
+      !validateSiweMessage({ message: parsed, domain: parsed.domain, time: new Date(now()) })
     ) {
       throw new HttpError(400, "invalid sign-in message");
     }
