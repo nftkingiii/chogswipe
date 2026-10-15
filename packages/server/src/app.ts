@@ -25,7 +25,12 @@ export interface AppDeps {
   chainId: number;
   allowedOrigin: string;
   now?: () => number;
+  /** Holder mode: wallet sign-in, hideouts, raids and settlement. Off during the public demo. */
+  holderMode?: boolean;
 }
+
+/** API routes that only exist for holders; the public demo needs none of them. */
+const HOLDER_ROUTES = ["/auth", "/me", "/chogs", "/hideouts", "/targets", "/raids"];
 
 const SESSION_MS = 24 * 3600_000;
 const NONCE_MS = 10 * 60_000;
@@ -50,6 +55,16 @@ export async function buildApp(deps: AppDeps) {
   const now = deps.now ?? Date.now;
   const app = Fastify({ logger: false, bodyLimit: 512 * 1024 });
   await app.register(cors, { origin: deps.allowedOrigin });
+
+  // public demo: the holder API stays shut until launch, whatever a client sends
+  if (deps.holderMode === false) {
+    app.addHook("onRequest", async (req, reply) => {
+      const path = req.url.split("?")[0]!;
+      if (HOLDER_ROUTES.some((r) => path === r || path.startsWith(`${r}/`))) {
+        return reply.status(403).send({ error: "holder mode opens at full launch" });
+      }
+    });
+  }
 
   app.setErrorHandler((err, _req, reply) => {
     const status = err instanceof HttpError ? err.status : (err as { statusCode?: number }).statusCode ?? 500;
@@ -78,7 +93,7 @@ export async function buildApp(deps: AppDeps) {
 
   // ------------------------------------------------------------- health
 
-  app.get("/health", async () => ({ ok: true, referee: signer.address, chainId: deps.chainId }));
+  app.get("/health", async () => ({ ok: true, referee: signer.address, chainId: deps.chainId, holderMode: deps.holderMode !== false }));
 
   // --------------------------------------------------------------- auth
 

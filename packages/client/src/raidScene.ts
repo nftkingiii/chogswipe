@@ -200,12 +200,13 @@ export class RaidScene extends Phaser.Scene {
       if (!win) continue;
       const r = Number(room);
       const [wx, wy, ww, wh] = win;
-      const img = this.add.image(colOf(r) * ROOM_PX + wx - 4, (FLOORS - 1 - floorOf(r)) * VIEW_H + wy, skyline).setOrigin(0, 0);
+      const img = this.add.image(colOf(r) * ROOM_PX + wx - 4, (FLOORS - 1 - floorOf(r)) * VIEW_H + wy, skyline).setOrigin(0, 0).setDepth(-20);
       this.skyPatches.push({ img, w: ww, h: wh });
     }
     for (let r = 0; r < ROOMS; r++) {
       const y = (FLOORS - 1 - floorOf(r)) * VIEW_H;
-      this.roomImages.push(this.boil(this.add.image(colOf(r) * ROOM_PX - 4, y, `room${r}_0`).setOrigin(0, 0), `room${r}`));
+      // explicit depths: with everything on depth 0, WebGL on some screens drew the rooms (stairs and all) over the guards
+      this.roomImages.push(this.boil(this.add.image(colOf(r) * ROOM_PX - 4, y, `room${r}_0`).setOrigin(0, 0).setDepth(-10), `room${r}`));
     }
     const v = this.plan.vault;
     this.boil(this.add.image(worldX(v.room, v.x) + (vaultOnRight(this.plan) ? 10 : -10), floorY(v.room) + 4, "vault_0").setOrigin(0.5, 1).setFlipX(!vaultOnRight(this.plan)), "vault");

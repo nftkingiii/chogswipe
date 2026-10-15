@@ -27,6 +27,7 @@ const app = await buildApp({
   signer: refereeSigner(config.refereeKey, config.chainId, config.vault),
   chainId: config.chainId,
   allowedOrigin: config.allowedOrigin,
+  holderMode: config.holderMode,
 });
 // serve the built game from the same origin, so wallet sign-in and the API share one domain
 const dist = fileURLToPath(new URL("../../client/dist", import.meta.url));

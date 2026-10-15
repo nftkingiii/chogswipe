@@ -210,3 +210,15 @@ describe("referee", () => {
     expect(fin.statusCode).toBe(404);
   });
 });
+
+describe("public demo", () => {
+  it("keeps the holder API shut and the health check open", async () => {
+    const app = await buildApp({ chain: fakeChain(), store: new MemoryStore(), signer: referee, chainId: 143, allowedOrigin: ORIGIN, holderMode: false });
+    for (const [method, url] of [["GET", "/auth/nonce"], ["POST", "/auth/verify"], ["GET", "/me"], ["GET", "/targets"], ["POST", "/raids"], ["POST", "/raids/x/finish"], ["PUT", "/hideouts/1"]] as const) {
+      expect((await app.inject({ method, url })).statusCode, url).toBe(403);
+    }
+    const health = await app.inject({ method: "GET", url: "/health" });
+    expect(health.statusCode).toBe(200);
+    expect(health.json().holderMode).toBe(false);
+  });
+});

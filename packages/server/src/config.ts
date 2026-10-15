@@ -8,6 +8,8 @@ export interface Config {
   vault: Address;
   refereeKey: Hex;
   allowedOrigin: string;
+  /** HOLDER_MODE=1 opens wallet sign-in and raids; off during the public demo */
+  holderMode: boolean;
 }
 
 function need(name: string): string {
@@ -25,5 +27,6 @@ export function loadConfig(): Config {
     vault: (process.env.VAULT_ADDRESS ?? "0xe9e4408410a18211f9b1EC754974675DDD6DD30e") as Address,
     refereeKey: need("REFEREE_PRIVATE_KEY") as Hex,
     allowedOrigin: process.env.ALLOWED_ORIGIN ?? "http://localhost:5173",
+    holderMode: process.env.HOLDER_MODE === "1",
   };
 }
