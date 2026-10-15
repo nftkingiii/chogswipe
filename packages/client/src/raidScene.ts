@@ -24,7 +24,7 @@ import {
 } from "@chogswipe/sim";
 import { ACCENT, BOIL_FRAMES, FLOOR_Y, INK, PAPER, ROOM_PX, SKIN, TRAP_H, VIEW_H, bakeSack, bakeTraps, bakeVault } from "./art.js";
 import { DEMO_ROSTER, IMAGE_BASE, type RosterChog } from "./roster.js";
-import { LOCATIONS, loadoutFor, starsFor, type Location } from "@chogswipe/sim";
+import { LOCATIONS, hideoutPlan, loadoutFor, starsFor, type Location } from "@chogswipe/sim";
 import { clock, markCleared, recordRun, starText } from "./progress.js";
 import { castReady, loadCast } from "./cast.js";
 import { isMuted, sfx, startMusic, stopMusic, toggleMute, unlockAudio } from "./sfx.js";
@@ -130,7 +130,7 @@ export class RaidScene extends Phaser.Scene {
     chog?: RosterChog;
     location?: Location;
     live?: { start: RaidStart; target: { id: number; name: string; traits: Traits } };
-    replay?: { inputs: InputLog; seed: number; raider: RosterChog; name: string; defender: RosterChog; traps: Location["traps"] };
+    replay?: { inputs: InputLog; seed: number; raider: RosterChog; name: string; defender: RosterChog; traps: Location["traps"]; plan?: string };
     daily?: DailyTicket;
   }) {
     this.chog = data.replay?.raider ?? data.chog ?? DEMO_ROSTER[0]!;
@@ -143,10 +143,13 @@ export class RaidScene extends Phaser.Scene {
     const house = this.live ? LOCATIONS.find((l) => l.id === this.live!.target.id) : undefined;
     if (data.replay) {
       const d = data.replay.defender;
-      this.loc = { ...LOCATIONS[0]!, id: d.id, slug: `chog-${d.id}`, name: data.replay.name, traits: d.traits, traps: data.replay.traps, rooms: [...ROOM_NAMES] as Location["rooms"], guard: "fwog", loot: "$CHOG", plan: HOUSE_PLAN };
+      const hp = hideoutPlan(data.replay.plan);
+      this.loc = { ...LOCATIONS[0]!, id: d.id, slug: `chog-${d.id}`, name: data.replay.name, traits: d.traits, traps: data.replay.traps, rooms: [...ROOM_NAMES] as Location["rooms"], guard: hp.guard, loot: "$CHOG", plan: hp.plan };
     } else if (this.live && !house) {
       const t = this.live.target;
-      this.loc = { ...LOCATIONS[0]!, id: t.id, slug: `chog-${t.id}`, name: t.name, traits: t.traits, traps: this.live.start.traps, rooms: [...ROOM_NAMES] as Location["rooms"], guard: "fwog", loot: "$CHOG", plan: HOUSE_PLAN };
+      // player hideouts use the floor plan their owner picked
+      const hp = hideoutPlan(this.live.start.plan);
+      this.loc = { ...LOCATIONS[0]!, id: t.id, slug: `chog-${t.id}`, name: t.name, traits: t.traits, traps: this.live.start.traps, rooms: [...ROOM_NAMES] as Location["rooms"], guard: hp.guard, loot: "$CHOG", plan: hp.plan };
     } else {
       const slug = this.daily?.slug ?? params.get("heist");
       this.loc = house ?? (this.daily ? undefined : data.location) ?? LOCATIONS.find((l) => l.slug === slug) ?? LOCATIONS[0]!;

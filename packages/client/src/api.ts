@@ -39,6 +39,8 @@ export interface MyChog {
   loadout: Loadout;
   vault: VaultView | null;
   layout: TrapPlacement[] | null;
+  /** the hideout's floor plan id */
+  plan?: string;
 }
 
 export interface Target extends Omit<MyChog, "layout"> {
@@ -51,6 +53,8 @@ export interface RaidStart {
   raider: Loadout;
   defender: Loadout;
   traps: TrapPlacement[];
+  /** the target hideout's floor plan id; null for lore houses */
+  plan?: string | null;
   capAmount: string;
 }
 
@@ -72,6 +76,7 @@ export interface Replay {
   startedAt: number;
   seed: number;
   traps: TrapPlacement[];
+  plan?: string;
   inputs?: InputLog;
   outcome?: Omit<RaidOutcome, "events">;
   amount: string;
@@ -114,8 +119,8 @@ export async function signIn(w: Wallet): Promise<void> {
 
 export const me = () => call<{ address: string; chogs: MyChog[] }>("/me");
 export const targets = () => call<{ targets: Target[] }>("/targets");
-export const saveHideout = (id: number, traps: TrapPlacement[]) =>
-  call<{ ok: true; traps: TrapPlacement[] }>(`/hideouts/${id}`, { method: "PUT", body: JSON.stringify({ traps }) });
+export const saveHideout = (id: number, traps: TrapPlacement[], plan: string) =>
+  call<{ ok: true; traps: TrapPlacement[]; plan: string }>(`/hideouts/${id}`, { method: "PUT", body: JSON.stringify({ traps, plan }) });
 export const startRaid = (raiderToken: number, targetToken: number) =>
   call<RaidStart>("/raids", { method: "POST", body: JSON.stringify({ raiderToken, targetToken }) });
 export const finishRaid = (raidId: Hex, inputs: InputLog) =>

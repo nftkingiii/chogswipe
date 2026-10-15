@@ -10,6 +10,8 @@ import {
   locationById,
   dailyChog,
   dailyHeist,
+  HIDEOUT_PLANS,
+  hideoutPlan,
   loadoutFor,
   simulateRaid,
   starsFor,
@@ -238,6 +240,7 @@ export async function buildApp(deps: AppDeps) {
         ...chogInfo(id),
         vault: serializeVault(vaults.get(id)),
         layout: await store.getLayout(id),
+        plan: hideoutPlan(await store.getPlan(id)).id,
       })),
     );
     return { address, chogs };
@@ -251,7 +254,7 @@ export async function buildApp(deps: AppDeps) {
 
   // ------------------------------------------------------------ hideout
 
-  app.put<{ Params: { id: string }; Body: { traps: TrapPlacement[] } }>("/hideouts/:id", async (req) => {
+  app.put<{ Params: { id: string }; Body: { traps: TrapPlacement[]; plan?: string } }>("/hideouts/:id", async (req) => {
     const address = await auth(req);
     const id = tokenParam(req.params.id);
     await requireOwner(address, id);
@@ -259,11 +262,13 @@ export async function buildApp(deps: AppDeps) {
     if (!info) throw new HttpError(404, "unknown Chog");
     const traps = req.body?.traps;
     if (!Array.isArray(traps)) throw new HttpError(400, "traps required");
+    const planId = req.body?.plan ?? "house";
+    if (!HIDEOUT_PLANS.some((p) => p.id === planId)) throw new HttpError(400, "unknown floor plan");
     const clean = traps.map((t) => ({ room: Number(t.room), x: Number(t.x), kind: t.kind }));
-    const errors = validateHideout({ defender: info.loadout, traps: clean });
+    const errors = validateHideout({ defender: info.loadout, traps: clean, plan: hideoutPlan(planId).plan });
     if (errors.length) throw new HttpError(400, errors.join("; "));
-    await store.putLayout(id, clean);
-    return { ok: true, traps: clean };
+    await store.putLayout(id, clean, planId);
+    return { ok: true, traps: clean, plan: planId };
   });
 
   // ------------------------------------------------------------ targets
@@ -295,6 +300,7 @@ export async function buildApp(deps: AppDeps) {
 
     const traps = isHouse(targetToken) ? houseLayout(targetToken) : await store.getLayout(targetToken);
     if (!traps) throw new HttpError(404, "that hideout has no traps set yet");
+    const plan = isHouse(targetToken) ? undefined : hideoutPlan(await store.getPlan(targetToken)).id;
 
     const day = utcDay(now());
     if ((await store.raidsStarted(raiderToken, day)) >= raider.loadout.stats.raidsPerDay) {
@@ -316,6 +322,7 @@ export async function buildApp(deps: AppDeps) {
       targetToken,
       seed: randomBytes(4).readUInt32BE(0),
       traps,
+      plan,
       capAmount: capAmount.toString(),
       startedAt: now(),
       day,
@@ -327,6 +334,7 @@ export async function buildApp(deps: AppDeps) {
       raider: raider.loadout,
       defender: target.loadout,
       traps,
+      plan: plan ?? null,
       capAmount: raid.capAmount,
     };
   });
@@ -348,8 +356,8 @@ export async function buildApp(deps: AppDeps) {
     let outcome;
     try {
       outcome = simulateRaid(
-        // lore houses have their own floor plans; player hideouts use the house plan
-        { seed: raid.seed, raider: raider.loadout, hideout: { defender: target.loadout, traps: raid.traps, plan: locationById(raid.targetToken)?.plan } },
+        // lore houses have their own floor plans; player hideouts use the plan saved with the layout
+        { seed: raid.seed, raider: raider.loadout, hideout: { defender: target.loadout, traps: raid.traps, plan: locationById(raid.targetToken)?.plan ?? hideoutPlan(raid.plan).plan } },
         inputs,
       );
     } catch {
@@ -419,6 +427,7 @@ export async function buildApp(deps: AppDeps) {
         startedAt: r.startedAt,
         seed: r.seed,
         traps: r.traps,
+        plan: hideoutPlan(r.plan).id,
         inputs: r.inputs,
         outcome: r.outcome,
         amount: r.amount ?? "0",

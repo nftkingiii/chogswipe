@@ -8,6 +8,7 @@ export const SCHEMA = `
 create table if not exists nonces (nonce text primary key, expires_at bigint not null);
 create table if not exists sessions (token text primary key, address text not null, expires_at bigint not null);
 create table if not exists layouts (token_id integer primary key, traps jsonb not null, updated_at bigint not null);
+alter table layouts add column if not exists plan text;
 create table if not exists raids (
   id text primary key,
   raider_token integer not null,
@@ -63,11 +64,16 @@ export class PgStore implements Store {
     return r.rows[0]?.traps ?? null;
   }
 
-  async putLayout(tokenId: number, traps: TrapPlacement[]) {
+  async putLayout(tokenId: number, traps: TrapPlacement[], plan?: string) {
     await this.pool.query(
-      "insert into layouts (token_id, traps, updated_at) values ($1, $2, $3) on conflict (token_id) do update set traps = excluded.traps, updated_at = excluded.updated_at",
-      [tokenId, JSON.stringify(traps), Date.now()],
+      "insert into layouts (token_id, traps, updated_at, plan) values ($1, $2, $3, $4) on conflict (token_id) do update set traps = excluded.traps, updated_at = excluded.updated_at, plan = excluded.plan",
+      [tokenId, JSON.stringify(traps), Date.now(), plan ?? null],
     );
+  }
+
+  async getPlan(tokenId: number) {
+    const r = await this.pool.query<{ plan: string | null }>("select plan from layouts where token_id = $1", [tokenId]);
+    return r.rows[0]?.plan ?? null;
   }
 
   async putRaid(raid: RaidRecord) {

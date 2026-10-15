@@ -53,7 +53,7 @@ export class HistoryScene extends Phaser.Scene {
     if (r.inputs)
       button(this, 1110, y + 37, 180, "Watch", () =>
         this.scene.start("raid", {
-          replay: { inputs: r.inputs, seed: r.seed, traps: r.traps, raider: r.raider, defender: me, name: `Raid on Chog #${me.id}` },
+          replay: { inputs: r.inputs, seed: r.seed, traps: r.traps, plan: r.plan, raider: r.raider, defender: me, name: `Raid on Chog #${me.id}` },
         }),
       false);
   }

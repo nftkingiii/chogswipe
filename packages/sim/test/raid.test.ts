@@ -537,3 +537,18 @@ describe("stars and the daily heist", () => {
     expect(() => dailyHeist("not a day")).toThrow();
   });
 });
+
+describe("hideout floor plans", () => {
+  it("every pickable plan can be beaten, and unknown ids fall back to the house", async () => {
+    const { HIDEOUT_PLANS, hideoutPlan, HOUSE_PLAN } = await import("../src/index.js");
+    expect(hideoutPlan("nope").plan).toBe(HOUSE_PLAN);
+    expect(hideoutPlan(null).id).toBe("house");
+    expect(new Set(HIDEOUT_PLANS.map((p) => p.id)).size).toBe(HIDEOUT_PLANS.length);
+    for (const hp of HIDEOUT_PLANS) {
+      const su = setup([{ room: 1, x: 300, kind: "Tripwire" }], loadoutFor({ Tier: "Legendary", Head: "Spartan Helmet", Body: "Golden Armor" }));
+      su.hideout.plan = hp.plan;
+      expect(validateHideout(su.hideout), hp.id).toEqual([]);
+      expect(run(su, { plan: hp.plan, seeTraps: true }).result, hp.id).toBe("escaped");
+    }
+  });
+});

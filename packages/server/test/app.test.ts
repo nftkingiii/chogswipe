@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { recoverTypedDataAddress, type Address, type Hex } from "viem";
 import { createSiweMessage } from "viem/siwe";
-import { DEMO_ROSTER, createRaid, dailyHeist, loadoutFor, makeBot, step, type InputLog, type RaidSetup } from "@chogswipe/sim";
+import { DEMO_ROSTER, createRaid, dailyHeist, hideoutPlan, loadoutFor, makeBot, step, type InputLog, type RaidSetup } from "@chogswipe/sim";
 import { buildApp } from "../src/app.js";
 import type { Chain, VaultState } from "../src/chain.js";
 import { HOUSE_BASE } from "../src/chogs.js";
@@ -197,6 +197,25 @@ describe("referee", () => {
     // Chog #1 is Uncommon: 3 raids per day
     for (let i = 0; i < 3; i++) expect((await raid({ raiderToken: 1, targetToken: HOUSE_BASE })).statusCode).toBe(200);
     expect((await raid({ raiderToken: 1, targetToken: HOUSE_BASE })).statusCode).toBe(429);
+  });
+
+  it("a hideout keeps its floor plan, and raids on it are replayed on that plan", async () => {
+    const owner = await signIn(other);
+    const put = (plan: string) =>
+      app.inject({ method: "PUT", url: "/hideouts/2", headers: authed(owner), payload: { traps: [{ room: 1, x: 300, kind: "Tripwire" }], plan } });
+    expect((await put("castle-in-the-sky")).statusCode).toBe(400);
+    expect((await put("molandak-lab")).statusCode).toBe(200);
+    const me = (await app.inject({ method: "GET", url: "/me", headers: authed(owner) })).json();
+    expect(me.chogs[0].plan).toBe("molandak-lab");
+
+    const token = await signIn();
+    const start = (await app.inject({ method: "POST", url: "/raids", headers: authed(token), payload: { raiderToken: 1, targetToken: 2 } })).json();
+    expect(start.plan).toBe("molandak-lab");
+    const plan = hideoutPlan(start.plan).plan;
+    const inputs = recordRun({ seed: start.seed, raider: start.raider, hideout: { defender: start.defender, traps: start.traps, plan } }, makeBot({ plan, seeTraps: true }));
+    clock += 60_000;
+    const fin = await app.inject({ method: "POST", url: `/raids/${start.raidId}/finish`, headers: authed(token), payload: { inputs } });
+    expect(fin.json().outcome.result).toBe("escaped");
   });
 
   it("someone else can't finish your raid", async () => {

@@ -7,6 +7,7 @@ import { connectWallet, disconnectWallet, wallet } from "./wallet.js";
 export interface PlayChog extends RosterChog {
   vault: { balance: string; shieldUntil: number } | null;
   layout: MyChog["layout"];
+  plan?: string;
 }
 
 interface Session {
@@ -62,6 +63,7 @@ export async function refresh(): Promise<void> {
     traits: c.traits,
     vault: c.vault,
     layout: c.layout,
+    plan: c.plan,
   }));
   if (session.selected >= session.chogs.length) session.selected = 0;
 }

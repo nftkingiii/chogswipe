@@ -267,3 +267,21 @@ export const LOCATIONS: Location[] = [
 export function locationById(id: number): Location | undefined {
   return LOCATIONS.find((l) => l.id === id);
 }
+
+/** Floor plans a holder can pick for their own hideout: the classic house, or the layout of a lore heist. */
+export interface HideoutPlan {
+  id: string;
+  name: string;
+  blurb: string;
+  plan: FloorPlan;
+  /** which monanimal stands guard, so a flying post looks like a flier */
+  guard: Location["guard"];
+}
+
+export const HIDEOUT_PLANS: HideoutPlan[] = [
+  { id: "house", name: "The House", blurb: "Stairs at both ends, a vent, a locked door upstairs and one slow guard in the kitchen.", plan: HOUSE_PLAN, guard: "fwog" },
+  ...LOCATIONS.slice(1).map((l) => ({ id: l.slug, name: `${l.name.replace(/^.*?'s /, "")} layout`, blurb: l.twist, plan: l.plan, guard: l.guard })),
+];
+
+/** The plan saved with a hideout; anything unknown (or nothing) is the house. */
+export const hideoutPlan = (id?: string | null): HideoutPlan => HIDEOUT_PLANS.find((p) => p.id === id) ?? HIDEOUT_PLANS[0]!;

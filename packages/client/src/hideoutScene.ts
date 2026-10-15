@@ -3,17 +3,15 @@ import Phaser from "phaser";
 import {
   COLS,
   FLOORS,
-  LINKS,
+  HIDEOUT_PLANS,
   LOCATIONS,
-  LOCKED_DOOR,
   ROOMS,
   ROOM_NAMES,
   ROOM_W,
-  VAULT_ROOM,
-  VAULT_X,
   blockedSpots,
   colOf,
   floorOf,
+  hideoutPlan,
   loadoutFor,
   validateHideout,
   type Location,
@@ -27,6 +25,7 @@ import { nav } from "./nav.js";
 import { refresh, selectedChog, session } from "./session.js";
 import { GADGET_INFO } from "./gadgetInfo.js";
 import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, panel, paperBackground, startHeist } from "./ui.js";
+import { PAPER } from "./art.js";
 
 const BOX_W = 360;
 const BOX_H = 170;
@@ -43,6 +42,10 @@ export class HideoutScene extends Phaser.Scene {
   private layer!: Phaser.GameObjects.Container;
   private status!: Phaser.GameObjects.Text;
   private palette: Phaser.GameObjects.Text[] = [];
+  private planId = "house";
+  private rooms!: Phaser.GameObjects.Container;
+  private planName!: Phaser.GameObjects.Text;
+  private planBlurb!: Phaser.GameObjects.Text;
 
   constructor() {
     super("hideout");
@@ -55,32 +58,38 @@ export class HideoutScene extends Phaser.Scene {
     const chog = selectedChog();
     const l = loadoutFor(chog.traits);
     this.traps = [...(chog.layout ?? [])];
+    this.planId = hideoutPlan(chog.plan).id;
     this.kind = l.trap;
 
-    this.add.text(42, 100, `Chog #${chog.id}'s hideout · ${l.tier}: up to ${l.stats.trapSlots} traps`, { fontFamily: FONT_BODY, fontSize: "24px", color: "#5a4d50" });
+    this.add.text(42, 96, `Chog #${chog.id}'s hideout · ${l.tier}: up to ${l.stats.trapSlots} traps`, { fontFamily: FONT_BODY, fontSize: "24px", color: "#5a4d50" });
 
-    // floor plan
+    // floor plan picker: the house, or the layout of any lore heist
+    const step = (d: number) => {
+      const i = HIDEOUT_PLANS.findIndex((p) => p.id === this.planId);
+      this.planId = HIDEOUT_PLANS[(i + d + HIDEOUT_PLANS.length) % HIDEOUT_PLANS.length]!.id;
+      this.drawRooms();
+      this.redraw();
+    };
+    const arrow = (x: number, label: string, d: number) => {
+      const t = this.add
+        .text(x, 96, label, { fontFamily: FONT_TITLE, fontSize: "22px", color: PAPER, backgroundColor: "#1c1618", padding: { x: 10, y: 3 } })
+        .setOrigin(0.5, 0)
+        .setInteractive({ useHandCursor: true });
+      t.on("pointerdown", () => step(d));
+    };
+    this.add.text(640, 102, "FLOOR PLAN", { fontFamily: FONT_TITLE, fontSize: "16px", color: "#8a7d70" });
+    arrow(770, "◀", -1);
+    this.planName = this.add.text(1002, 98, "", { fontFamily: FONT_TITLE, fontSize: "22px", color: INK }).setOrigin(0.5, 0);
+    arrow(1232, "▶", 1);
+    this.planBlurb = this.add.text(42, 126, "", { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70", wordWrap: { width: 1190 } });
+
+    this.rooms = this.add.container(0, 0);
     for (let r = 0; r < ROOMS; r++) {
       const x = boxX(r), y = boxY(r);
-      panel(this, x, y, BOX_W, BOX_H, r === VAULT_ROOM ? 0xf6e3a8 : 0xfffaf0);
-      this.add.text(x + 14, y + 10, ROOM_NAMES[r]!.toUpperCase(), { fontFamily: FONT_TITLE, fontSize: "16px", color: "#8a7d70" });
-      // no-trap zones: doorways, stairs, vents, the vault
-      const g = this.add.graphics();
-      for (const b of blockedSpots().filter((b) => b.room === r)) {
-        g.fillStyle(0x1c1618, 0.08).fillRect(x + Math.max(0, toBox(b.x - b.r)), y + 34, Math.min(BOX_W, toBox(2 * b.r)), BOX_H - 44);
-      }
-      g.lineStyle(3, INK_N, 1).lineBetween(x + 8, y + BOX_H - 30, x + BOX_W - 8, y + BOX_H - 30);
-      for (const link of LINKS) {
-        const end = link.a.room === r ? link.a : link.b.room === r ? link.b : null;
-        if (end) this.add.text(x + toBox(end.x), y + 40, link.kind === "vent" ? "vent" : link.a.room === r ? "stairs ↑" : "stairs ↓", { fontFamily: FONT_BODY, fontSize: "15px", color: "#8a7d70" }).setOrigin(0.5, 0);
-      }
-      if (r === VAULT_ROOM) this.add.text(x + toBox(VAULT_X), y + 70, "$ VAULT", { fontFamily: FONT_TITLE, fontSize: "16px", color: "#c79a2a" }).setOrigin(0.5, 0);
-      if (r === LOCKED_DOOR.left) this.add.text(x + BOX_W - 12, y + 70, "locked\ndoor", { fontFamily: FONT_BODY, fontSize: "14px", color: "#8a2a2a", align: "right" }).setOrigin(1, 0);
-      if (r === 0) this.add.text(x + 12, y + 70, "entrance", { fontFamily: FONT_BODY, fontSize: "14px", color: "#8a7d70" });
-      if (r === 2) this.add.text(x + BOX_W / 2, y + 40, "guard patrols here", { fontFamily: FONT_BODY, fontSize: "14px", color: "#8a7d70" }).setOrigin(0.5, 0);
       const zone = this.add.zone(x, y + 30, BOX_W, BOX_H - 30).setOrigin(0, 0).setInteractive({ useHandCursor: true });
       zone.on("pointerdown", (p: Phaser.Input.Pointer) => this.place(r, Math.round(((p.x - x) / BOX_W) * ROOM_W)));
     }
+    this.drawRooms();
     this.layer = this.add.container(0, 0);
 
     // trap palette
@@ -106,6 +115,45 @@ export class HideoutScene extends Phaser.Scene {
     this.redraw();
   }
 
+  /** The six rooms for the chosen plan: links, vault, locked door, guards, hazards and the no-trap zones. */
+  private drawRooms() {
+    this.rooms.removeAll(true);
+    const hp = hideoutPlan(this.planId);
+    const plan = hp.plan;
+    this.planName.setText(hp.name);
+    this.planBlurb.setText(hp.blurb);
+    const note = (x: number, y: number, text: string, color = "#8a7d70", size = 14) =>
+      this.rooms.add(this.add.text(x, y, text, { fontFamily: FONT_BODY, fontSize: `${size}px`, color, align: "center" }).setOrigin(0.5, 0));
+    const LINK_LABEL = { stairs: ["stairs ↑", "stairs ↓"], vent: ["vent", "vent"], launch: ["launch pad ↑", "landing"], portal: ["portal", "portal"] } as const;
+    for (let r = 0; r < ROOMS; r++) {
+      const x = boxX(r), y = boxY(r);
+      this.rooms.add(panel(this, x, y, BOX_W, BOX_H, r === plan.vault.room ? 0xf6e3a8 : 0xfffaf0));
+      this.rooms.add(this.add.text(x + 14, y + 10, ROOM_NAMES[r]!.toUpperCase(), { fontFamily: FONT_TITLE, fontSize: "16px", color: "#8a7d70" }));
+      // no-trap zones: doorways, stairs, vents, pads, portals, the vault
+      const g = this.add.graphics();
+      this.rooms.add(g);
+      for (const b of blockedSpots(plan).filter((b) => b.room === r)) {
+        const x0 = Math.max(0, toBox(b.x - b.r)), x1 = Math.min(BOX_W, toBox(b.x + b.r));
+        g.fillStyle(0x1c1618, 0.08).fillRect(x + x0, y + 34, x1 - x0, BOX_H - 44);
+      }
+      for (const h of plan.hazards.filter((h) => h.room === r)) {
+        g.fillStyle(h.kind === "water" ? 0x7fc0d6 : 0xd8d8d8, 0.5).fillRect(x + toBox(h.x0), y + BOX_H - 44, toBox(h.x1 - h.x0), 14);
+        note(x + toBox((h.x0 + h.x1) / 2), y + BOX_H - 62, h.kind === "water" ? "river" : "steam vents", "#4a7c8c");
+      }
+      g.lineStyle(3, INK_N, 1).lineBetween(x + 8, y + BOX_H - 30, x + BOX_W - 8, y + BOX_H - 30);
+      for (const link of plan.links) {
+        const end = link.a.room === r ? link.a : link.b.room === r ? link.b : null;
+        if (end) note(x + toBox(end.x), y + 40, LINK_LABEL[link.kind][link.a.room === r ? 0 : 1], "#8a7d70", 15);
+      }
+      if (r === plan.vault.room) note(x + toBox(plan.vault.x), y + 70, "$ VAULT", "#c79a2a", 16);
+      const d = plan.lockedDoor;
+      if (d && r === d.left) this.rooms.add(this.add.text(x + BOX_W - 12, y + 70, "locked\ndoor", { fontFamily: FONT_BODY, fontSize: "14px", color: "#8a2a2a", align: "right" }).setOrigin(1, 0));
+      if (r === 0) this.rooms.add(this.add.text(x + 12, y + 70, "entrance", { fontFamily: FONT_BODY, fontSize: "14px", color: "#8a7d70" }));
+      const guards = plan.guards.filter((gd) => gd.room === r);
+      if (guards.length) note(x + BOX_W / 2, y + BOX_H - 27, guards.some((gd) => gd.flies) ? "flying guard patrols here" : "guard patrols here");
+    }
+  }
+
   private place(room: number, x: number) {
     const hit = this.traps.findIndex((t) => t.room === room && Math.abs(t.x - x) < 50);
     if (hit >= 0) this.traps.splice(hit, 1);
@@ -114,7 +162,7 @@ export class HideoutScene extends Phaser.Scene {
   }
 
   private errors(): string[] {
-    return validateHideout({ defender: loadoutFor(selectedChog().traits), traps: this.traps });
+    return validateHideout({ defender: loadoutFor(selectedChog().traits), traps: this.traps, plan: hideoutPlan(this.planId).plan });
   }
 
   private redraw() {
@@ -138,12 +186,13 @@ export class HideoutScene extends Phaser.Scene {
     const chog = selectedChog();
     if (session.mode !== "live") {
       chog.layout = [...this.traps];
+      chog.plan = this.planId;
       this.status.setText("Saved for this demo session. Connect a wallet to save it for real.");
       return;
     }
     this.status.setText("Saving…");
     try {
-      await saveHideout(chog.id, this.traps);
+      await saveHideout(chog.id, this.traps, this.planId);
       await refresh();
       this.status.setText("Saved. Raiders will face this layout.");
     } catch (e) {
@@ -155,6 +204,7 @@ export class HideoutScene extends Phaser.Scene {
   private test() {
     if (this.errors().length) return;
     const chog = selectedChog();
+    const hp = hideoutPlan(this.planId);
     const loc: Location = {
       ...LOCATIONS[0]!,
       id: chog.id,
@@ -163,7 +213,8 @@ export class HideoutScene extends Phaser.Scene {
       traits: chog.traits,
       traps: [...this.traps],
       rooms: [...ROOM_NAMES] as Location["rooms"],
-      guard: "fwog",
+      guard: hp.guard,
+      plan: hp.plan,
       loot: "nothing, it's a test",
     };
     startHeist(this, { chog, location: loc });

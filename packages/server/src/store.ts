@@ -8,6 +8,8 @@ export interface RaidRecord {
   targetToken: number;
   seed: number;
   traps: TrapPlacement[];
+  /** the hideout's floor plan id (player hideouts); lore houses use their own */
+  plan?: string;
   capAmount: string; // wei, decimal string
   startedAt: number;
   day: string;
@@ -44,7 +46,9 @@ export interface Store {
   putSession(token: string, address: Address, expiresAt: number): Promise<void>;
   getSession(token: string, now: number): Promise<Address | null>;
   getLayout(tokenId: number): Promise<TrapPlacement[] | null>;
-  putLayout(tokenId: number, traps: TrapPlacement[]): Promise<void>;
+  putLayout(tokenId: number, traps: TrapPlacement[], plan?: string): Promise<void>;
+  /** the floor plan id saved with a layout, if any */
+  getPlan(tokenId: number): Promise<string | null>;
   putRaid(raid: RaidRecord): Promise<void>;
   getRaid(id: Hex): Promise<RaidRecord | null>;
   raidsStarted(raiderToken: number, day: string): Promise<number>;
@@ -63,6 +67,7 @@ export class MemoryStore implements Store {
   private nonces = new Map<string, number>();
   private sessions = new Map<string, { address: Address; expiresAt: number }>();
   private layouts = new Map<number, TrapPlacement[]>();
+  private plans = new Map<number, string>();
   private raids = new Map<string, RaidRecord>();
   private daily = new Map<string, DailyRun>();
   private feedback: Feedback[] = [];
@@ -85,8 +90,13 @@ export class MemoryStore implements Store {
   async getLayout(tokenId: number) {
     return this.layouts.get(tokenId) ?? null;
   }
-  async putLayout(tokenId: number, traps: TrapPlacement[]) {
+  async putLayout(tokenId: number, traps: TrapPlacement[], plan?: string) {
     this.layouts.set(tokenId, traps);
+    if (plan) this.plans.set(tokenId, plan);
+    else this.plans.delete(tokenId);
+  }
+  async getPlan(tokenId: number) {
+    return this.plans.get(tokenId) ?? null;
   }
   async putRaid(raid: RaidRecord) {
     this.raids.set(raid.id, raid);
