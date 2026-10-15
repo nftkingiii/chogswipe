@@ -70,6 +70,18 @@ const formStyles = `
 .cs-row button { font: 20px "Luckiest Guy", sans-serif; letter-spacing: 1px; padding: 10px 18px 6px; border: 4px solid #1c1618; border-radius: 14px; cursor: pointer; }
 .cs-cancel { background: #f3eadb; color: #1c1618; }
 .cs-go { background: #e0528a; color: #f3eadb; box-shadow: 4px 5px 0 #1c1618; }
+/* phones held sideways: everything has to fit above the keyboard */
+@media (max-height: 520px) {
+  .cs-form { padding: 8px; place-items: start center; }
+  .cs-form form { padding: 12px 16px; font-size: 16px; border-width: 4px; box-shadow: 5px 6px 0 #1c1618; }
+  .cs-form b { font-size: 22px; }
+  .cs-form p { margin: 2px 0; font-size: 15px; }
+  .cs-form label { margin-top: 6px; font-size: 15px; }
+  .cs-form input, .cs-form textarea { padding: 6px 10px; font-size: 16px; }
+  .cs-form textarea { height: 64px; }
+  .cs-row { margin-top: 10px; }
+  .cs-row button { font-size: 16px; padding: 8px 14px 4px; }
+}
 `;
 
 let styled = false;

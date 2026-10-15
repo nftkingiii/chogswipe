@@ -89,6 +89,11 @@ export class RaidScene extends Phaser.Scene {
   private exiting = false;
   private lastStepT = -1;
   private touchMask = 0;
+  /** HUD pieces that move to the top of the screen when the touch buttons take the bottom corners */
+  private hudLeft: { y: number }[] = [];
+  private hudRight: { y: number }[] = [];
+  private keyHint?: Phaser.GameObjects.Text;
+  private mapDy = 0;
   private lastJumpT = -1;
   private hintsShown = new Set<string>();
   private hint?: Phaser.GameObjects.Container;
@@ -322,22 +327,27 @@ export class RaidScene extends Phaser.Scene {
     const lootBar = fixed(this.add.graphics());
 
     // bottom-left: who you are and your gadgets
-    fixed(this.add.graphics()).fillStyle(0x1c1618, 0.9).fillRoundedRect(16, H - 112, 560, 96, 18);
-    fixed(portraitImage(this, 64, H - 64, `portrait:${this.chog.id}`, imageUrl(this.chog), 76));
-    fixed(this.add.graphics()).lineStyle(4, 0xf3eadb, 1).strokeRoundedRect(25, H - 103, 78, 78, 12);
-    fixed(this.add.text(118, H - 104, `Chog #${this.chog.id}`, { fontFamily: FONT_TITLE, fontSize: "22px", color: PAPER }));
+    this.hudLeft = [];
+    this.hudRight = [];
+    this.mapDy = 0;
+    const left = <T extends { y: number }>(o: T) => (this.hudLeft.push(o), o);
+    left(fixed(this.add.graphics())).fillStyle(0x1c1618, 0.9).fillRoundedRect(16, H - 112, 560, 96, 18);
+    left(fixed(portraitImage(this, 64, H - 64, `portrait:${this.chog.id}`, imageUrl(this.chog), 76)));
+    left(fixed(this.add.graphics())).lineStyle(4, 0xf3eadb, 1).strokeRoundedRect(25, H - 103, 78, 78, 12);
+    left(fixed(this.add.text(118, H - 104, `Chog #${this.chog.id}`, { fontFamily: FONT_TITLE, fontSize: "22px", color: PAPER })));
     const l = this.setup.raider;
-    fixed(this.add.text(118, H - 76, `${l.tier} · ${l.body ?? "—"} · ${l.head ?? "—"}`, { fontFamily: FONT_BODY, fontSize: "18px", color: "#c9bfae" }));
+    left(fixed(this.add.text(118, H - 76, `${l.tier} · ${l.body ?? "—"} · ${l.head ?? "—"}`, { fontFamily: FONT_BODY, fontSize: "18px", color: "#c9bfae" })));
     const chip = (x: number) =>
-      fixed(this.add.text(x, H - 50, "", { fontFamily: FONT_BODY, fontSize: "19px", color: INK, backgroundColor: PAPER, padding: { x: 10, y: 4 } }));
+      left(fixed(this.add.text(x, H - 50, "", { fontFamily: FONT_BODY, fontSize: "19px", color: INK, backgroundColor: PAPER, padding: { x: 10, y: 4 } })));
     const scout = chip(118);
     const special = chip(300);
 
     // bottom-right: floor plan and controls
-    fixed(this.add.graphics()).fillStyle(0x1c1618, 0.9).fillRoundedRect(W - 236, H - 160, 220, 108, 16);
+    this.hudRight.push(fixed(this.add.graphics()).fillStyle(0x1c1618, 0.9).fillRoundedRect(W - 236, H - 160, 220, 108, 16));
     const room = fixed(this.add.text(W - 222, H - 154, "", { fontFamily: FONT_TITLE, fontSize: "18px", color: PAPER }));
+    this.hudRight.push(room);
     const map = fixed(this.add.graphics());
-    fixed(
+    this.keyHint = fixed(
       this.add
         .text(W - 16, H - 16, "← → move  SPACE jump  ↑↓ stairs  F grab  Q scout  E special", {
           fontFamily: FONT_BODY,
@@ -452,6 +462,12 @@ export class RaidScene extends Phaser.Scene {
     this.touchMask = 0;
     const H = this.scale.height;
     const W = this.scale.width;
+    // the buttons take the bottom corners: the Chog card and the minimap move up under the top bar
+    this.keyHint?.setVisible(false);
+    const dl = 100 - (H - 112);
+    for (const o of this.hudLeft) o.y += dl;
+    this.mapDy = 100 - (H - 160);
+    for (const o of this.hudRight) o.y += this.mapDy;
     const pad = (x: number, y: number, r: number, label: string, bit: number) => {
       const c = this.add.circle(x, y, r, 0x1c1618, 0.55).setStrokeStyle(4, 0xf3eadb, 0.9).setScrollFactor(0).setDepth(150).setInteractive();
       this.add.text(x, y, label, { fontFamily: FONT_TITLE, fontSize: `${Math.round(r * 0.55)}px`, color: PAPER }).setOrigin(0.5).setScrollFactor(0).setDepth(151);
@@ -927,7 +943,7 @@ export class RaidScene extends Phaser.Scene {
 
     // floor plan: visited rooms, where you are, the vault
     const m = this.hud.map.clear();
-    const cw = 58, ch = 28, ox = W - 222, oy = H - 124;
+    const cw = 58, ch = 28, ox = W - 222, oy = H - 124 + this.mapDy;
     for (let r = 0; r < ROOMS; r++) {
       const cx = ox + colOf(r) * (cw + 8);
       const cy = oy + (FLOORS - 1 - floorOf(r)) * (ch + 8);
