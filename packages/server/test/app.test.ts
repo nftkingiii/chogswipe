@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { recoverTypedDataAddress, type Address, type Hex } from "viem";
 import { createSiweMessage } from "viem/siwe";
-import { createRaid, makeBot, step, type InputLog, type RaidSetup } from "@chogswipe/sim";
+import { DEMO_ROSTER, createRaid, dailyHeist, loadoutFor, makeBot, step, type InputLog, type RaidSetup } from "@chogswipe/sim";
 import { buildApp } from "../src/app.js";
 import type { Chain, VaultState } from "../src/chain.js";
 import { HOUSE_BASE } from "../src/chogs.js";
@@ -40,9 +40,8 @@ function fakeChain(): Chain & { owners: Map<number, Address>; balances: Map<numb
 }
 
 /** Autopilot run through the kitchen, jumping every armed trap. */
-function recordRun(su: RaidSetup): InputLog {
+function recordRun(su: RaidSetup, bot = makeBot({ route: "kitchen", seeTraps: true })): InputLog {
   const s = createRaid(su);
-  const bot = makeBot({ route: "kitchen", seeTraps: true });
   const log: [number, number][] = [];
   let prev = -1;
   while (!s.result) {
@@ -220,5 +219,67 @@ describe("public demo", () => {
     const health = await app.inject({ method: "GET", url: "/health" });
     expect(health.statusCode).toBe(200);
     expect(health.json().holderMode).toBe(false);
+  });
+});
+
+describe("daily heist and feedback", () => {
+  let clock: number;
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  const day = "2026-10-15";
+  beforeEach(async () => {
+    clock = Date.parse(`${day}T12:00:00Z`);
+    app = await buildApp({ chain: fakeChain(), store: new MemoryStore(), signer: referee, chainId: 143, allowedOrigin: ORIGIN, holderMode: false, now: () => clock, feedbackKey: "k" });
+  });
+
+  const dailyRun = () => {
+    const { location, seed } = dailyHeist(day);
+    const chog = DEMO_ROSTER[0]!;
+    const su: RaidSetup = { seed, raider: loadoutFor(chog.traits), hideout: { defender: loadoutFor(location.traits), traps: location.traps, plan: location.plan } };
+    return { chog, inputs: recordRun(su, makeBot({ plan: location.plan, seeTraps: true, scout: true })) };
+  };
+
+  it("replays a daily run, ranks it, and keeps each name's best", async () => {
+    const view = (await app.inject({ method: "GET", url: "/daily" })).json();
+    expect(view.slug).toBe(dailyHeist(day).location.slug);
+    expect(view.top).toEqual([]);
+
+    const { chog, inputs } = dailyRun();
+    const ticket = (await app.inject({ method: "POST", url: "/daily/start" })).json().ticket;
+    // too fast: the clock hasn't moved
+    const early = await app.inject({ method: "POST", url: "/daily/finish", payload: { ticket, name: "speedy", chogId: chog.id, inputs } });
+    expect(early.statusCode).toBe(400);
+
+    const t2 = (await app.inject({ method: "POST", url: "/daily/start" })).json().ticket;
+    clock += 120_000;
+    const done = await app.inject({ method: "POST", url: "/daily/finish", payload: { ticket: t2, name: "Chog Fan", chogId: chog.id, inputs } });
+    expect(done.statusCode, done.body).toBe(200);
+    expect(done.json().result).toBe("escaped");
+    expect(done.json().rank).toBe(1);
+    expect(done.json().stars).toBeGreaterThan(0);
+    // a ticket works once
+    const again = await app.inject({ method: "POST", url: "/daily/finish", payload: { ticket: t2, name: "Chog Fan", chogId: chog.id, inputs } });
+    expect(again.statusCode).toBe(410);
+    expect((await app.inject({ method: "GET", url: "/daily" })).json().top).toHaveLength(1);
+  });
+
+  it("rejects bad names, non-demo Chogs and junk inputs", async () => {
+    const { chog, inputs } = dailyRun();
+    for (const body of [
+      { name: "<script>", chogId: chog.id, inputs },
+      { name: "ok name", chogId: 999_999, inputs },
+      { name: "ok name", chogId: chog.id, inputs: [[0, 1 << 20]] },
+    ]) {
+      const ticket = (await app.inject({ method: "POST", url: "/daily/start" })).json().ticket;
+      clock += 120_000;
+      expect((await app.inject({ method: "POST", url: "/daily/finish", payload: { ticket, ...body } })).statusCode).toBe(400);
+    }
+  });
+
+  it("takes feedback from anyone and shows it only with the key", async () => {
+    expect((await app.inject({ method: "POST", url: "/feedback", payload: { text: "love the guards", contact: "@fan", where: "map" } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: "/feedback", payload: { text: "" } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: "/feedback" })).statusCode).toBe(404);
+    const list = await app.inject({ method: "GET", url: "/feedback", headers: { "x-feedback-key": "k" } });
+    expect(list.json().feedback[0]).toMatchObject({ text: "love the guards", contact: "@fan", where: "map" });
   });
 });

@@ -8,7 +8,12 @@ import {
   RAID_TICKS,
   TICK_HZ,
   locationById,
+  dailyChog,
+  dailyHeist,
+  loadoutFor,
   simulateRaid,
+  starsFor,
+  utcDay,
   validateHideout,
   type InputLog,
   type TrapPlacement,
@@ -27,6 +32,8 @@ export interface AppDeps {
   now?: () => number;
   /** Holder mode: wallet sign-in, hideouts, raids and settlement. Off during the public demo. */
   holderMode?: boolean;
+  /** FEEDBACK_KEY: lets the team read the feedback box at GET /feedback */
+  feedbackKey?: string;
 }
 
 /** API routes that only exist for holders; the public demo needs none of them. */
@@ -48,12 +55,32 @@ class HttpError extends Error {
   }
 }
 
-const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+const DAILY_START_MS = 10 * 60_000;
+const DAILY_NAME = /^[A-Za-z0-9 ._@-]{2,16}$/;
+
+/** A small per-address rate limit for the public endpoints. */
+function limiter(max: number, windowMs: number, now: () => number) {
+  const hits = new Map<string, number[]>();
+  return (key: string) => {
+    const t = now();
+    const recent = (hits.get(key) ?? []).filter((x) => t - x < windowMs);
+    if (recent.length >= max) throw new HttpError(429, "slow down a little");
+    recent.push(t);
+    hits.set(key, recent);
+    if (hits.size > 10_000) hits.clear();
+  };
+}
+
+const validInputs = (inputs: unknown): inputs is InputLog =>
+  Array.isArray(inputs) &&
+  inputs.length <= MAX_INPUTS &&
+  inputs.every((e) => Array.isArray(e) && e.length === 2 && Number.isInteger(e[0]) && Number.isInteger(e[1]) && e[1] >= 0 && e[1] <= INPUT_MASK_MAX);
 
 export async function buildApp(deps: AppDeps) {
   const { chain, store, signer } = deps;
   const now = deps.now ?? Date.now;
-  const app = Fastify({ logger: false, bodyLimit: 512 * 1024 });
+  // behind Railway's proxy, so req.ip is the player's address for the rate limits
+  const app = Fastify({ logger: false, bodyLimit: 512 * 1024, trustProxy: true });
   await app.register(cors, { origin: deps.allowedOrigin });
 
   // public demo: the holder API stays shut until launch, whatever a client sends
@@ -94,6 +121,83 @@ export async function buildApp(deps: AppDeps) {
   // ------------------------------------------------------------- health
 
   app.get("/health", async () => ({ ok: true, referee: signer.address, chainId: deps.chainId, holderMode: deps.holderMode !== false }));
+
+
+  // ---------------------------------------------- daily heist (public demo)
+  // Everyone plays the same heist with the same seed all day. The client asks for a start ticket,
+  // plays, and sends its inputs; the referee replays them and ranks escapes by time.
+
+  const dailyStarts = new Map<string, { day: string; at: number }>();
+  const dailyLimit = limiter(30, 3600_000, now);
+  const feedbackLimit = limiter(5, 600_000, now);
+
+  const dailyView = async (day: string) => {
+    const d = dailyHeist(day);
+    const top = await store.dailyTop(day, 20);
+    return {
+      day,
+      slug: d.location.slug,
+      seed: d.seed,
+      top: top.map((r, i) => ({ rank: i + 1, name: r.name, chogId: r.chogId, ticks: r.ticks, stars: r.stars })),
+    };
+  };
+
+  app.get("/daily", async () => dailyView(utcDay(now())));
+
+  app.post("/daily/start", async (req) => {
+    dailyLimit(req.ip);
+    const ticket = randomBytes(12).toString("hex");
+    for (const [k, v] of dailyStarts) if (now() - v.at > DAILY_START_MS) dailyStarts.delete(k);
+    const day = utcDay(now());
+    dailyStarts.set(ticket, { day, at: now() });
+    const d = dailyHeist(day);
+    return { ticket, day, slug: d.location.slug, seed: d.seed };
+  });
+
+  app.post<{ Body: { ticket: string; name: string; chogId: number; inputs: InputLog } }>("/daily/finish", async (req) => {
+    const { ticket, name, chogId, inputs } = req.body ?? ({} as never);
+    const start = typeof ticket === "string" ? dailyStarts.get(ticket) : undefined;
+    if (!start || now() - start.at > DAILY_START_MS) throw new HttpError(410, "that run's ticket ran out: start again");
+    dailyStarts.delete(ticket);
+    const clean = typeof name === "string" ? name.trim() : "";
+    if (!DAILY_NAME.test(clean)) throw new HttpError(400, "names are 2–16 letters, numbers, spaces or . _ @ -");
+    const chog = dailyChog(chogId);
+    if (!chog) throw new HttpError(400, "daily runs use the demo Chogs");
+    if (!validInputs(inputs)) throw new HttpError(400, "bad input log");
+    const { location, seed } = dailyHeist(start.day);
+    let outcome;
+    try {
+      outcome = simulateRaid(
+        { seed, raider: loadoutFor(chog.traits), hideout: { defender: loadoutFor(location.traits), traps: location.traps, plan: location.plan } },
+        inputs,
+      );
+    } catch {
+      throw new HttpError(400, "bad input log");
+    }
+    // a run can't finish faster than real time
+    if (now() - start.at < (outcome.ticks / TICK_HZ) * 1000 - 2000) throw new HttpError(400, "that run finished faster than real time");
+    const stars = starsFor(outcome, location);
+    if (stars > 0) await store.putDailyRun({ day: start.day, name: clean, chogId, ticks: outcome.ticks, stars, at: now() });
+    const view = await dailyView(start.day);
+    const rank = view.top.find((r) => r.name.toLowerCase() === clean.toLowerCase())?.rank ?? null;
+    return { ...view, result: outcome.result, ticks: outcome.ticks, stars, rank };
+  });
+
+  // ------------------------------------------------------------ feedback
+
+  app.post<{ Body: { text: string; contact?: string; where?: string } }>("/feedback", async (req) => {
+    feedbackLimit(req.ip);
+    const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+    if (text.length < 2 || text.length > 2000) throw new HttpError(400, "feedback is 2–2000 characters");
+    const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
+    await store.putFeedback({ at: now(), text, contact: str(req.body.contact, 120), where: str(req.body.where, 60) });
+    return { ok: true };
+  });
+
+  app.get("/feedback", async (req) => {
+    if (!deps.feedbackKey || req.headers["x-feedback-key"] !== deps.feedbackKey) throw new HttpError(404, "not found");
+    return { feedback: await store.listFeedback(500) };
+  });
 
   // --------------------------------------------------------------- auth
 
@@ -234,13 +338,7 @@ export async function buildApp(deps: AppDeps) {
     if (raid.finishedAt) throw new HttpError(409, "raid already finished");
 
     const inputs = req.body?.inputs;
-    if (
-      !Array.isArray(inputs) ||
-      inputs.length > MAX_INPUTS ||
-      !inputs.every((e) => Array.isArray(e) && e.length === 2 && Number.isInteger(e[0]) && Number.isInteger(e[1]) && e[1] >= 0 && e[1] <= INPUT_MASK_MAX)
-    ) {
-      throw new HttpError(400, "bad input log");
-    }
+    if (!validInputs(inputs)) throw new HttpError(400, "bad input log");
 
     const elapsed = now() - raid.startedAt;
     if (elapsed > (RAID_TICKS / TICK_HZ) * 1000 + RAID_SLACK_MS) throw new HttpError(410, "raid expired");

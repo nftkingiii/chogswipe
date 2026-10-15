@@ -3,6 +3,7 @@ import Phaser from "phaser";
 import { HOLDER_MODE, goDemo, goLive, session } from "./session.js";
 import { DESIGN_W, notice, topNav } from "./ui.js";
 import { showGuide } from "./guide.js";
+import { openFeedback } from "./feedback.js";
 import { onAccountsChanged } from "./wallet.js";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -45,9 +46,10 @@ export function nav(scene: Phaser.Scene, active: string) {
       }
     },
   }, () => showGuide(scene));
+  let left = DESIGN_W - 40;
   if (!live) {
-    scene.add
-      .text(DESIGN_W - 40, 76, HOLDER_MODE ? "DEMO · connect a wallet holding a Chog to play for real" : "PUBLIC DEMO · open to everyone · holder mode launches soon", {
+    const banner = scene.add
+      .text(left, 76, HOLDER_MODE ? "DEMO · connect a wallet holding a Chog to play for real" : "PUBLIC DEMO · holder mode launches soon", {
         fontFamily: "'Patrick Hand', sans-serif",
         fontSize: "16px",
         color: "#1c1618",
@@ -55,7 +57,16 @@ export function nav(scene: Phaser.Scene, active: string) {
         padding: { x: 8, y: 2 },
       })
       .setOrigin(1, 0);
+    left -= banner.width + 8;
   }
+  // the feedback box, on every menu screen
+  const fb = scene.add
+    .text(left, 76, "✎ SEND FEEDBACK", { fontFamily: "'Luckiest Guy', sans-serif", fontSize: "15px", color: "#f3eadb", backgroundColor: "#1c1618", padding: { x: 8, y: 4 } })
+    .setOrigin(1, 0)
+    .setInteractive({ useHandCursor: true });
+  fb.on("pointerover", () => fb.setColor("#f0c35a"));
+  fb.on("pointerout", () => fb.setColor("#f3eadb"));
+  fb.on("pointerdown", () => void openFeedback(scene));
 }
 
 /** Shown on tabs that need a signed-in holder. */

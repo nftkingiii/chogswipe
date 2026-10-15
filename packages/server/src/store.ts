@@ -20,6 +20,23 @@ export interface RaidRecord {
   deadline?: number;
 }
 
+/** A best daily-heist run, kept per player name per day. */
+export interface DailyRun {
+  day: string;
+  name: string;
+  chogId: number;
+  ticks: number;
+  stars: number;
+  at: number;
+}
+
+export interface Feedback {
+  at: number;
+  text: string;
+  contact?: string;
+  where?: string;
+}
+
 /** Persistence for the referee. MemoryStore for local runs and tests; a Postgres store replaces it on deploy. */
 export interface Store {
   putNonce(nonce: string, expiresAt: number): Promise<void>;
@@ -33,13 +50,22 @@ export interface Store {
   raidsStarted(raiderToken: number, day: string): Promise<number>;
   raidsAgainst(targetToken: number, limit: number): Promise<RaidRecord[]>;
   allLayouts(): Promise<number[]>;
+  /** keeps the faster of this run and the name's earlier best that day */
+  putDailyRun(run: DailyRun): Promise<void>;
+  dailyTop(day: string, limit: number): Promise<DailyRun[]>;
+  putFeedback(f: Feedback): Promise<void>;
+  listFeedback(limit: number): Promise<Feedback[]>;
 }
+
+const faster = (a: DailyRun, b: DailyRun) => a.ticks - b.ticks || a.at - b.at;
 
 export class MemoryStore implements Store {
   private nonces = new Map<string, number>();
   private sessions = new Map<string, { address: Address; expiresAt: number }>();
   private layouts = new Map<number, TrapPlacement[]>();
   private raids = new Map<string, RaidRecord>();
+  private daily = new Map<string, DailyRun>();
+  private feedback: Feedback[] = [];
 
   async putNonce(nonce: string, expiresAt: number) {
     this.nonces.set(nonce, expiresAt);
@@ -79,5 +105,19 @@ export class MemoryStore implements Store {
   }
   async allLayouts() {
     return [...this.layouts.keys()];
+  }
+  async putDailyRun(run: DailyRun) {
+    const key = `${run.day}|${run.name.toLowerCase()}`;
+    const old = this.daily.get(key);
+    if (!old || run.ticks < old.ticks) this.daily.set(key, run);
+  }
+  async dailyTop(day: string, limit: number) {
+    return [...this.daily.values()].filter((r) => r.day === day).sort(faster).slice(0, limit);
+  }
+  async putFeedback(f: Feedback) {
+    this.feedback.push(f);
+  }
+  async listFeedback(limit: number) {
+    return this.feedback.slice(-limit).reverse();
   }
 }

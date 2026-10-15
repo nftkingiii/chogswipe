@@ -22,6 +22,8 @@ export interface Location {
   plan: FloorPlan;
   /** one line on what makes this heist different, shown on the heist card */
   twist: string;
+  /** seconds to beat for the third star */
+  par: number;
 }
 
 const R = ROOM_W - 80; // vault against the right wall
@@ -129,6 +131,7 @@ export const LOCATIONS: Location[] = [
     guard: "fwog",
     plan: PLANS.fwog,
     twist: "The classic house. A slow guard, a locked door upstairs, and a vent if you've got the hat.",
+    par: 40,
   },
   {
     id: HOUSE_BASE + 1,
@@ -148,6 +151,7 @@ export const LOCATIONS: Location[] = [
     guard: "fwog",
     plan: PLANS.rayj,
     twist: "The safe is downstairs behind a locked door. Pick the lock, or loop upstairs past the guard and down the back stairs.",
+    par: 40,
   },
   {
     id: HOUSE_BASE + 2,
@@ -168,6 +172,7 @@ export const LOCATIONS: Location[] = [
     guard: "moyaki",
     plan: PLANS.moyaki,
     twist: "The recipe is upstairs on the left. Steam vents blast in the Proving Room: cross between bursts.",
+    par: 60,
   },
   {
     id: HOUSE_BASE + 3,
@@ -188,6 +193,7 @@ export const LOCATIONS: Location[] = [
     guard: "mouch",
     plan: PLANS.mouch,
     twist: "A launch pad shoots you straight up to the vault, but Mouch flies: you can't jump him. The only way back down is the far stairs.",
+    par: 50,
   },
   {
     id: HOUSE_BASE + 4,
@@ -209,6 +215,7 @@ export const LOCATIONS: Location[] = [
     guard: "salmonad",
     plan: PLANS.salmonad,
     twist: "The river runs through the hideout. Wading slows you down, and every alarm eats your clock.",
+    par: 55,
   },
   {
     id: HOUSE_BASE + 5,
@@ -230,6 +237,7 @@ export const LOCATIONS: Location[] = [
     guard: "molandak",
     plan: PLANS.molandak,
     twist: "A portal in the Clock Hall jumps straight to the Time Vault, past a fast guard. Only 90 seconds on the clock.",
+    par: 20,
   },
   {
     id: HOUSE_BASE + 6,
@@ -252,6 +260,7 @@ export const LOCATIONS: Location[] = [
     guard: "mongrod",
     plan: PLANS.mongrod,
     twist: "Two guards, two routes, a locked door. Pick your danger.",
+    par: 35,
   },
 ];
 

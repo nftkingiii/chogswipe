@@ -24,11 +24,12 @@ import {
 } from "@chogswipe/sim";
 import { ACCENT, BOIL_FRAMES, FLOOR_Y, INK, PAPER, ROOM_PX, SKIN, TRAP_H, VIEW_H, bakeSack, bakeTraps, bakeVault } from "./art.js";
 import { DEMO_ROSTER, IMAGE_BASE, type RosterChog } from "./roster.js";
-import { LOCATIONS, loadoutFor, type Location } from "@chogswipe/sim";
-import { markCleared } from "./progress.js";
+import { LOCATIONS, loadoutFor, starsFor, type Location } from "@chogswipe/sim";
+import { clock, markCleared, recordRun, starText } from "./progress.js";
 import { castReady, loadCast } from "./cast.js";
 import { isMuted, sfx, startMusic, stopMusic, toggleMute, unlockAudio } from "./sfx.js";
-import { finishRaid, type RaidStart, type SignedResult } from "./api.js";
+import { finishDaily, finishRaid, type DailyTicket, type RaidStart, type SignedResult } from "./api.js";
+import { askForm } from "./dom.js";
 import { imageUrl, refresh } from "./session.js";
 import { portraitImage } from "./portraits.js";
 import { settle } from "./tx.js";
@@ -119,6 +120,8 @@ export class RaidScene extends Phaser.Scene {
   private live: { start: RaidStart; target: { id: number; name: string; traits: Traits } } | null = null;
   /** Replay of a raid against one of our hideouts. */
   private replay: { inputs: InputLog; seed: number; raider: RosterChog; name: string } | null = null;
+  /** Daily heist: the server's seed, and the ticket our inputs go back with for the leaderboard. */
+  private daily: DailyTicket | null = null;
   private log: [number, number][] = [];
   private lastMask = -1;
   private signed: SignedResult | null = null;
@@ -128,9 +131,11 @@ export class RaidScene extends Phaser.Scene {
     location?: Location;
     live?: { start: RaidStart; target: { id: number; name: string; traits: Traits } };
     replay?: { inputs: InputLog; seed: number; raider: RosterChog; name: string; defender: RosterChog; traps: Location["traps"] };
+    daily?: DailyTicket;
   }) {
     this.chog = data.replay?.raider ?? data.chog ?? DEMO_ROSTER[0]!;
     this.live = data.live ?? null;
+    this.daily = data.daily ?? null;
     this.replay = data.replay ? { inputs: data.replay.inputs, seed: data.replay.seed, raider: data.replay.raider, name: data.replay.name } : null;
     this.log = [];
     this.lastMask = -1;
@@ -143,7 +148,8 @@ export class RaidScene extends Phaser.Scene {
       const t = this.live.target;
       this.loc = { ...LOCATIONS[0]!, id: t.id, slug: `chog-${t.id}`, name: t.name, traits: t.traits, traps: this.live.start.traps, rooms: [...ROOM_NAMES] as Location["rooms"], guard: "fwog", loot: "$CHOG", plan: HOUSE_PLAN };
     } else {
-      this.loc = house ?? data.location ?? LOCATIONS.find((l) => l.slug === params.get("heist")) ?? LOCATIONS[0]!;
+      const slug = this.daily?.slug ?? params.get("heist");
+      this.loc = house ?? (this.daily ? undefined : data.location) ?? LOCATIONS.find((l) => l.slug === slug) ?? LOCATIONS[0]!;
     }
     // demo vault sizes until the house vaults are funded; live raids use the referee's cap
     this.cap = this.live ? Math.floor(Number(formatUnits(BigInt(this.live.start.capAmount), 18))) : 2_000 + Math.max(0, LOCATIONS.indexOf(this.loc)) * 1_000;
@@ -176,7 +182,7 @@ export class RaidScene extends Phaser.Scene {
     this.setup = this.live
       ? { seed: this.live.start.seed, raider: this.live.start.raider, hideout: { defender: this.live.start.defender, traps: this.live.start.traps, plan: this.plan } }
       : {
-          seed: this.replay?.seed ?? ((Date.now() & 0xffff) ^ this.chog.id),
+          seed: this.replay?.seed ?? this.daily?.seed ?? ((Date.now() & 0xffff) ^ this.chog.id),
           raider: loadoutFor(this.chog.traits),
           hideout: { defender: loadoutFor(this.loc.traits), traps: this.loc.traps, plan: this.plan },
         };
@@ -553,7 +559,10 @@ export class RaidScene extends Phaser.Scene {
         if (e.result === "escaped") sfx.win();
         else sfx.lose();
         this.toast(e.result === "escaped" ? "ESCAPED!" : e.result === "knocked-out" ? "KNOCKED OUT" : e.result === "caught" ? "CAUGHT BY THE GUARD" : "TIME'S UP", e.result === "escaped" ? "#f0c35a" : ACCENT, 1200);
-        if (e.result === "escaped" && !this.live && !this.replay) markCleared(this.loc.slug);
+        const stars = starsFor({ result: e.result, lootBps: this.s.lootBps, ticks: this.s.t, events: this.s.events }, this.loc);
+        const lore = !this.live && !this.replay;
+        if (e.result === "escaped" && lore) markCleared(this.loc.slug);
+        const best = lore && stars > 0 && !AUTOPILOT ? recordRun(this.loc.slug, this.s.t, stars) : false;
         if (e.result === "escaped") this.exitThroughDoor();
         if (this.live) {
           // the referee replays our inputs and signs the result if we escaped with loot
@@ -566,8 +575,10 @@ export class RaidScene extends Phaser.Scene {
               this.toast(`Referee: ${(err as Error).message}`, ACCENT, 4000);
               this.resultCard(e.result);
             });
+        } else if (this.daily) {
+          this.time.delayedCall(700, () => void this.postDaily(e.result, stars));
         } else {
-          this.time.delayedCall(700, () => this.resultCard(e.result));
+          this.time.delayedCall(700, () => this.resultCard(e.result, stars, best ? "New best time!" : undefined));
         }
         break;
     }
@@ -582,7 +593,44 @@ export class RaidScene extends Phaser.Scene {
     this.time.delayedCall(700, () => this.frontDoor.setTexture("frontdoor_0"));
   }
 
-  private resultCard(result: string) {
+  /** Daily heist: ask for a name and send the run to the leaderboard; the referee replays it. */
+  private async postDaily(result: string, stars: number) {
+    const daily = this.daily!;
+    if (stars === 0) return this.resultCard(result, stars, "Escape with the loot to get a time on today's board.");
+    let saved = "";
+    try {
+      saved = localStorage.getItem("chogswipe.name") ?? "";
+    } catch {
+      /* ignore */
+    }
+    const v = await askForm({
+      title: `${clock(this.s.t)} · ${starText(stars)}`,
+      blurb: "Put your time on today's daily heist board.",
+      fields: [{ name: "name", label: "Name on the board (2–16 letters)", value: saved, maxLength: 16, required: true }],
+      submit: "Post my time",
+    });
+    const name = v?.name;
+    if (!name) return this.resultCard(result, stars, "Time not posted.");
+    try {
+      localStorage.setItem("chogswipe.name", name);
+    } catch {
+      /* ignore */
+    }
+    try {
+      const r = await finishDaily({ ticket: daily.ticket, name, chogId: this.chog.id, inputs: this.log });
+      const mine = r.top.find((x) => x.name.toLowerCase() === name.toLowerCase());
+      const note = r.rank
+        ? mine && mine.ticks < r.ticks
+          ? `#${r.rank} on today's board (your best is still ${clock(mine.ticks)})`
+          : `#${r.rank} on today's board!`
+        : "Posted! Not in today's top 20 yet.";
+      this.resultCard(result, stars, note);
+    } catch (err) {
+      this.resultCard(result, stars, `Board: ${(err as Error).message}`);
+    }
+  }
+
+  private resultCard(result: string, stars = 0, extra?: string) {
     const W = this.scale.width;
     const H = this.scale.height;
     const won = result === "escaped";
@@ -598,10 +646,11 @@ export class RaidScene extends Phaser.Scene {
     const s = this.s;
     const secs = Math.round(s.t / TICK_HZ);
     const traps = s.events.filter((e) => e.type === "trap").length;
+    const lore = !this.live && !this.replay;
     const stats = this.add.text(
       -90,
       -14,
-      `${secs}s run · ${traps} trap${traps === 1 ? "" : "s"} hit · ${s.hp} hearts left\n${this.visited.size} of ${ROOMS} rooms · from ${this.loc.name}`,
+      `${lore && won ? clock(s.t) : `${secs}s`} run${lore ? ` (par ${this.loc.par}s)` : ""} · ${traps} trap${traps === 1 ? "" : "s"} hit · ${s.hp} hearts left\n${this.visited.size} of ${ROOMS} rooms · from ${this.daily ? "today's daily heist" : this.loc.name}`,
       { fontFamily: FONT_BODY, fontSize: "22px", color: "#5a4d50", lineSpacing: 4 },
     );
     const btn = this.add.graphics();
@@ -615,9 +664,11 @@ export class RaidScene extends Phaser.Scene {
         ? this.signed
           ? `signed by the referee · settle within 15 min · ${formatUnits(BigInt(this.signed.amount), 18)} $CHOG`
           : "nothing to settle"
-        : won
-          ? `swiped ${this.loc.loot}. ${crewQuip(this.loc.slug)}`
-          : `${crewQuip(this.loc.slug, false)}`;
+        : extra
+          ? extra
+          : won
+            ? `swiped ${this.loc.loot}. ${crewQuip(this.loc.slug)}`
+            : `${crewQuip(this.loc.slug, false)}`;
     const note = this.add.text(0, 136, noteText, { fontFamily: FONT_BODY, fontSize: "16px", color: "#8a7d70", align: "center", wordWrap: { width: 540 } }).setOrigin(0.5, 0);
     let busy = false;
     const go = async () => {
@@ -643,7 +694,9 @@ export class RaidScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-ENTER", go);
     // pin every child too, or the button's click area scrolls with the map while the card stays on screen
     // (Phaser 4's setScrollFactor(x, y, true) skips children whose scroll factor is still the default)
-    const parts = [shade, card, head, title, amount, stats, btn, cta, note];
+    // stars under the Chog: escaped, untouched, beat par
+    const starLine = this.add.text(-190, 48, lore ? starText(stars) : "", { fontFamily: FONT_BODY, fontSize: "40px", color: "#e0a92a" }).setOrigin(0.5, 0);
+    const parts = [shade, card, head, title, amount, stats, btn, cta, note, starLine];
     parts.forEach((o) => o.setScrollFactor(0));
     c.add(parts).setScrollFactor(0);
     this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 320, ease: "Back.Out" });

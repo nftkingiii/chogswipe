@@ -506,3 +506,34 @@ describe("floor plans", () => {
     expect(s.guards[1]!.x).not.toBe(200);
   });
 });
+
+describe("stars and the daily heist", () => {
+  it("the autopilot earns all three stars on every heist, so par is always reachable", async () => {
+    const { LOCATIONS, DEMO_ROSTER, starsFor } = await import("../src/index.js");
+    for (const loc of LOCATIONS) {
+      const su = setup(loc.traps, loadoutFor(DEMO_ROSTER[0]!.traits), loadoutFor(loc.traits));
+      su.hideout.plan = loc.plan;
+      const out = run(su, { plan: loc.plan, seeTraps: true, scout: true });
+      expect(starsFor(out, loc), loc.slug).toBeGreaterThanOrEqual(2);
+      expect(out.ticks, loc.slug).toBeLessThanOrEqual(loc.par * 30);
+    }
+  });
+
+  it("stars: none for a failed run, one lost for each trap or a slow time", async () => {
+    const { LOCATIONS, starsFor } = await import("../src/index.js");
+    const loc = LOCATIONS[0]!;
+    expect(starsFor({ result: "caught", lootBps: 0, ticks: 100, events: [] }, loc)).toBe(0);
+    expect(starsFor({ result: "escaped", lootBps: 500, ticks: 100, events: [] }, loc)).toBe(3);
+    expect(starsFor({ result: "escaped", lootBps: 500, ticks: 100, events: [{ t: 5, type: "scald" }] }, loc)).toBe(2);
+    expect(starsFor({ result: "escaped", lootBps: 500, ticks: loc.par * 30 + 1, events: [{ t: 5, type: "scald" }] }, loc)).toBe(1);
+  });
+
+  it("the daily heist is the same all day and changes each day", async () => {
+    const { dailyHeist, LOCATIONS } = await import("../src/index.js");
+    expect(dailyHeist("2026-10-15")).toEqual(dailyHeist("2026-10-15"));
+    const week = Array.from({ length: LOCATIONS.length }, (_, i) => dailyHeist(`2026-10-${String(10 + i).padStart(2, "0")}`));
+    expect(new Set(week.map((d) => d.location.slug)).size).toBe(LOCATIONS.length);
+    expect(new Set(week.map((d) => d.seed)).size).toBe(LOCATIONS.length);
+    expect(() => dailyHeist("not a day")).toThrow();
+  });
+});

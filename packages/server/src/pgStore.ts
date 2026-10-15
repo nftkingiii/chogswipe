@@ -2,7 +2,7 @@
 import type { Pool } from "pg";
 import type { Address, Hex } from "viem";
 import type { TrapPlacement } from "@chogswipe/sim";
-import type { RaidRecord, Store } from "./store.js";
+import type { DailyRun, Feedback, RaidRecord, Store } from "./store.js";
 
 export const SCHEMA = `
 create table if not exists nonces (nonce text primary key, expires_at bigint not null);
@@ -19,6 +19,17 @@ create table if not exists raids (
 );
 create index if not exists raids_raider_day on raids (raider_token, day);
 create index if not exists raids_target on raids (target_token, started_at);
+create table if not exists daily_runs (
+  day text not null,
+  name_key text not null,
+  name text not null,
+  chog_id integer not null,
+  ticks integer not null,
+  stars integer not null,
+  at bigint not null,
+  primary key (day, name_key)
+);
+create table if not exists feedback (id serial primary key, at bigint not null, text text not null, contact text, place text);
 `;
 
 export class PgStore implements Store {
@@ -89,5 +100,34 @@ export class PgStore implements Store {
   async allLayouts() {
     const r = await this.pool.query<{ token_id: number }>("select token_id from layouts");
     return r.rows.map((x) => x.token_id);
+  }
+
+  async putDailyRun(run: DailyRun) {
+    await this.pool.query(
+      `insert into daily_runs (day, name_key, name, chog_id, ticks, stars, at) values ($1, $2, $3, $4, $5, $6, $7)
+       on conflict (day, name_key) do update set name = excluded.name, chog_id = excluded.chog_id, ticks = excluded.ticks, stars = excluded.stars, at = excluded.at
+       where excluded.ticks < daily_runs.ticks`,
+      [run.day, run.name.toLowerCase(), run.name, run.chogId, run.ticks, run.stars, run.at],
+    );
+  }
+
+  async dailyTop(day: string, limit: number) {
+    const r = await this.pool.query<{ name: string; chog_id: number; ticks: number; stars: number; at: string }>(
+      "select name, chog_id, ticks, stars, at from daily_runs where day = $1 order by ticks, at limit $2",
+      [day, limit],
+    );
+    return r.rows.map((x) => ({ day, name: x.name, chogId: x.chog_id, ticks: x.ticks, stars: x.stars, at: Number(x.at) }));
+  }
+
+  async putFeedback(f: Feedback) {
+    await this.pool.query("insert into feedback (at, text, contact, place) values ($1, $2, $3, $4)", [f.at, f.text, f.contact ?? null, f.where ?? null]);
+  }
+
+  async listFeedback(limit: number) {
+    const r = await this.pool.query<{ at: string; text: string; contact: string | null; place: string | null }>(
+      "select at, text, contact, place from feedback order by id desc limit $1",
+      [limit],
+    );
+    return r.rows.map((x) => ({ at: Number(x.at), text: x.text, contact: x.contact ?? undefined, where: x.place ?? undefined }));
   }
 }

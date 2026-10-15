@@ -2,14 +2,15 @@
 import Phaser from "phaser";
 import { LOCATIONS, loadoutFor, type Location } from "@chogswipe/sim";
 import { bake, grain, ink, INK, PAPER } from "./art.js";
-import { cleared } from "./progress.js";
+import { bests, clock, cleared, starText } from "./progress.js";
+import { getDaily, startDaily, type DailyView } from "./api.js";
 import type { RosterChog } from "./roster.js";
 import { selectedChog } from "./session.js";
 import { nav } from "./nav.js";
 import { themeFor } from "./theme.js";
 import { castReady, loadCast } from "./cast.js";
 import { advance, onboardStep } from "./onboarding.js";
-import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, centerStage, panel, stageLeft, startHeist } from "./ui.js";
+import { ACCENT_N, FONT_BODY, FONT_TITLE, INK_N, button, centerStage, notice, panel, stageLeft, startHeist } from "./ui.js";
 
 // node positions along the path, left to right, winding up and down
 const NODES: [number, number][] = [
@@ -99,9 +100,11 @@ export class MapScene extends Phaser.Scene {
       g.fillStyle(open ? color : 0x9a948c, 1).fillCircle(x, y, 38);
       g.lineStyle(5, INK_N, 1).strokeCircle(x, y, 38);
       this.add.text(x, y, won ? "✓" : open ? String(i + 1) : "🔒", { fontFamily: FONT_TITLE, fontSize: won || open ? "34px" : "26px", color: PAPER }).setOrigin(0.5);
-      this.add
+      const name = this.add
         .text(x, y + 46, loc.name, { fontFamily: FONT_TITLE, fontSize: "17px", color: INK, backgroundColor: "rgba(243,234,219,0.85)", padding: { x: 6, y: 2 } })
         .setOrigin(0.5, 0);
+      const best = bests()[loc.slug];
+      if (best) this.add.text(x, name.y + name.height, starText(best.stars), { fontFamily: FONT_BODY, fontSize: "20px", color: "#c7861a", stroke: "#1c1618", strokeThickness: 3 }).setOrigin(0.5, 0);
       if (i === next) {
         const ring = this.add.circle(x, y, 46).setStrokeStyle(5, ACCENT_N);
         this.tweens.add({ targets: ring, scale: 1.25, alpha: 0, duration: 1100, repeat: -1 });
@@ -111,6 +114,7 @@ export class MapScene extends Phaser.Scene {
     });
 
     this.guide();
+    this.dailyPanel();
     this.showCard(LOCATIONS[next]!, next);
   }
 
@@ -126,9 +130,11 @@ export class MapScene extends Phaser.Scene {
       this.add.text(x + 20, title.y + title.height + 10, loc.blurb, { fontFamily: FONT_BODY, fontSize: "17px", color: "#3b3033", wordWrap: { width: w - 40 } }),
     );
     const d = loadoutFor(loc.traits);
+    const best = bests()[loc.slug];
     const facts = [
       `Defender: ${d.tier} · ${loc.traps.length} traps`,
       `${loc.plan.guards.length > 1 ? `${loc.plan.guards.length} guards` : "1 guard"} · ${loc.plan.seconds}s on the clock`,
+      best ? `Best: ${clock(best.ticks)} ${starText(best.stars)} · par ${loc.par}s` : `Par: ${loc.par}s for the third ★`,
     ];
     const factText = keep(
       this.add.text(x + 20, blurb.y + blurb.height + 10, facts.join("\n"), { fontFamily: FONT_BODY, fontSize: "17px", color: INK, lineSpacing: 2, wordWrap: { width: w - 40 } }),
@@ -146,6 +152,54 @@ export class MapScene extends Phaser.Scene {
       }),
     );
     keep(button(this, x + w / 2, y + h - 46, w - 40, "Start heist", () => startHeist(this, { chog: this.chog, location: loc })));
+  }
+
+  /** Today's daily heist: same heist and seed for everyone, ranked by time on the server. */
+  private dailyPanel() {
+    const x = 672, y = 612, w = 568, h = 84;
+    panel(this, x, y, w, h, 0xf6e3a8);
+    this.add.text(x + 20, y + 12, "DAILY HEIST", { fontFamily: FONT_TITLE, fontSize: "20px", color: "#b8323a" });
+    const line = this.add.text(x + 20, y + 40, "Loading today's heist…", { fontFamily: FONT_BODY, fontSize: "19px", color: INK, wordWrap: { width: 300 } });
+    let view: DailyView | null = null;
+    button(this, x + w - 196, y + h / 2, 110, "Board", () => view && this.board(view), false).setScale(0.9);
+    button(this, x + w - 76, y + h / 2, 120, "Play", async () => {
+      try {
+        const ticket = await startDaily();
+        startHeist(this, { chog: this.chog, daily: ticket });
+      } catch (e) {
+        const msg = notice(this, `The daily heist is offline right now: ${(e as Error).message}`);
+        this.time.delayedCall(3000, () => msg.destroy());
+      }
+    }).setScale(0.9);
+    getDaily()
+      .then((v) => {
+        if (!this.scene.isActive()) return;
+        view = v;
+        const loc = LOCATIONS.find((l) => l.slug === v.slug);
+        const top = v.top[0];
+        line.setText(`${loc?.name ?? v.slug} · ${top ? `best ${clock(top.ticks)} by ${top.name}` : "no times yet: be first!"}`);
+      })
+      .catch(() => this.scene.isActive() && line.setText("The board is offline right now."));
+  }
+
+  /** Today's top 20. */
+  private board(v: DailyView) {
+    const parts: Phaser.GameObjects.GameObject[] = [];
+    const keep = <T extends Phaser.GameObjects.GameObject>(o: T) => (parts.push(o), o);
+    const close = () => parts.forEach((o) => o.destroy());
+    const D = 400;
+    keep(this.add.rectangle(640, 360, 4000, 2000, INK_N, 0.6).setDepth(D).setInteractive()).on("pointerdown", close);
+    const x = 340, y = 70, w = 600, h = 590;
+    keep(panel(this, x, y, w, h).setDepth(D));
+    keep(this.add.zone(x, y, w, h).setOrigin(0, 0).setDepth(D).setInteractive());
+    const loc = LOCATIONS.find((l) => l.slug === v.slug);
+    keep(this.add.text(x + 30, y + 24, "TODAY'S BOARD", { fontFamily: FONT_TITLE, fontSize: "34px", color: INK }).setDepth(D));
+    keep(this.add.text(x + 30, y + 66, `${loc?.name ?? v.slug} · ${v.day} · resets at 00:00 UTC`, { fontFamily: FONT_BODY, fontSize: "19px", color: "#5a4d50" }).setDepth(D));
+    const rows = v.top.length
+      ? v.top.map((r) => `${String(r.rank).padStart(2, " ")}. ${r.name.padEnd(16, " ")} ${clock(r.ticks)}  ${starText(r.stars)}`).join("\n")
+      : "No times yet today. Be the first on the board!";
+    keep(this.add.text(x + 30, y + 104, rows, { fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: "19px", color: INK, lineSpacing: 2 }).setDepth(D));
+    keep(button(this, x + w - 100, y + h - 44, 150, "Close", close).setDepth(D + 1));
   }
 
   /** The guide's hint box. Molandak's art goes in the frame once the monanimal sheet is ready. */

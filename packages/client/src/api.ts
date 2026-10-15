@@ -121,3 +121,37 @@ export const startRaid = (raiderToken: number, targetToken: number) =>
 export const finishRaid = (raidId: Hex, inputs: InputLog) =>
   call<{ outcome: RaidOutcome; result: SignedResult | null }>(`/raids/${raidId}/finish`, { method: "POST", body: JSON.stringify({ inputs }) });
 export const raidsAgainst = (id: number) => call<{ raids: Replay[] }>(`/hideouts/${id}/raids`);
+
+// ------------------------------------------------- public demo: daily heist and feedback
+
+export interface DailyEntry {
+  rank: number;
+  name: string;
+  chogId: number;
+  ticks: number;
+  stars: number;
+}
+
+export interface DailyView {
+  day: string;
+  slug: string;
+  seed: number;
+  top: DailyEntry[];
+}
+
+export interface DailyTicket {
+  ticket: string;
+  day: string;
+  slug: string;
+  seed: number;
+}
+
+export const getDaily = () => call<DailyView>("/daily");
+
+export const startDaily = () => call<DailyTicket>("/daily/start", { method: "POST", body: "{}" });
+
+export const finishDaily = (body: { ticket: string; name: string; chogId: number; inputs: InputLog }) =>
+  call<DailyView & { result: string; ticks: number; stars: number; rank: number | null }>("/daily/finish", { method: "POST", body: JSON.stringify(body) });
+
+export const sendFeedback = (body: { text: string; contact?: string; where?: string }) =>
+  call<{ ok: true }>("/feedback", { method: "POST", body: JSON.stringify(body) });
