@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Chogswipe · vault owner</title>
+<style>
+  :root { --ink: #1c1618; --paper: #f3eadb; --pink: #e0528a; --mute: #5a4d50; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--paper); color: var(--ink); font: 18px/1.45 system-ui, sans-serif; padding: 16px; box-sizing: border-box; }
+  main { width: min(560px, 100%); background: #fffaf0; border: 4px solid var(--ink); border-radius: 18px; box-shadow: 6px 8px 0 var(--ink); padding: 24px; box-sizing: border-box; }
+  h1 { margin: 0 0 8px; font-size: 26px; }
+  p { margin: 8px 0; color: var(--mute); }
+  code { font-size: 14px; word-break: break-all; color: var(--ink); }
+  button { margin-top: 14px; font: 600 18px system-ui, sans-serif; padding: 12px 18px; border: 3px solid var(--ink); border-radius: 12px; background: var(--pink); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #log { margin-top: 16px; white-space: pre-wrap; font-size: 15px; color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Accept vault ownership</h1>
+  <p>Vault <code>0x3a519fDf34Fa98DCf268f4C9d456F50eED710e8D</code> on Monad mainnet.</p>
+  <p>Connect the wallet the vault is waiting for (its pending owner), then accept. This sends one call, <code>acceptOwnership()</code>, with no MON attached.</p>
+  <button id="go">Connect wallet and accept</button>
+  <div id="log"></div>
+</main>
+<script>
+  // Ownable2Step: the deployer called transferOwnership(pending owner); the pending owner finishes it here.
+  const VAULT = "0x3a519fDf34Fa98DCf268f4C9d456F50eED710e8D";
+  const CHAIN = "0x8f"; // Monad mainnet, 143
+  const SEL = { accept: "0x79ba5097", owner: "0x8da5cb5b", pending: "0xe30c3978" };
+  const log = (s) => (document.getElementById("log").textContent += s + "\n");
+  const btn = document.getElementById("go");
+  const addr = (word) => "0x" + word.slice(-40).toLowerCase();
+
+  async function read(eth, data) {
+    return addr(await eth.request({ method: "eth_call", params: [{ to: VAULT, data }, "latest"] }));
+  }
+
+  btn.onclick = async () => {
+    const eth = window.ethereum;
+    if (!eth) return log("No wallet found. Open this page in your wallet app's browser (e.g. MetaMask → Browser), or in a desktop browser with the extension.");
+    btn.disabled = true;
+    try {
+      const [me] = await eth.request({ method: "eth_requestAccounts" });
+      log("Connected: " + me);
+      if ((await eth.request({ method: "eth_chainId" })) !== CHAIN) {
+        try {
+          await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN }] });
+        } catch (e) {
+          if (e.code !== 4902) throw e;
+          await eth.request({ method: "wallet_addEthereumChain", params: [{ chainId: CHAIN, chainName: "Monad", nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 }, rpcUrls: ["https://rpc.monad.xyz"], blockExplorerUrls: ["https://monadscan.com"] }] });
+        }
+      }
+      const owner = await read(eth, SEL.owner);
+      const pending = await read(eth, SEL.pending);
+      if (owner === me.toLowerCase()) return log("This wallet already owns the vault. Nothing to do.");
+      if (pending !== me.toLowerCase()) return log("This wallet isn't the pending owner (" + pending + "). Switch to that account and try again.");
+      log("Confirm the transaction in your wallet…");
+      const hash = await eth.request({ method: "eth_sendTransaction", params: [{ from: me, to: VAULT, data: SEL.accept, value: "0x0" }] });
+      log("Sent: " + hash + "\nWaiting for it to land…");
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const rc = await eth.request({ method: "eth_getTransactionReceipt", params: [hash] });
+        if (!rc) continue;
+        if (rc.status !== "0x1") return log("The transaction failed on chain.");
+        return log("Done. Vault owner is now " + (await read(eth, SEL.owner)) + ".");
+      }
+      log("Still pending. Check it on monadscan.com: " + hash);
+    } catch (e) {
+      log("Stopped: " + (e.message || e));
+    } finally {
+      btn.disabled = false;
+    }
+  };
+</script>
+</body>
+</html>
