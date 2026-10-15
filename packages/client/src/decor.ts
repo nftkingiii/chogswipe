@@ -36,6 +36,8 @@ export interface Decor {
   /** extra darkness over the whole room, by room */
   dim?: number[];
   rooms: ((p: Paint) => void)[];
+  /** wall art up at window height, as [x0, x1] spans per room, so windows keep clear of it */
+  art?: Record<number, [number, number][]>;
   /** the thing in the foreground the Chog walks behind (220×300 canvas, standing on y 300) */
   fg?: (ctx: CanvasRenderingContext2D, rc: RC, s: number) => void;
 }
@@ -513,6 +515,7 @@ const rayj: Decor = {
   sky: "dusk",
   frame: "#2a2124",
   curtain: null,
+  art: { 5: [[588, 762]] }, // the framed first glitch
   rooms: [
     // Gallery: framed Chog sketches behind a velvet rope
     (p) => {
@@ -781,21 +784,20 @@ const mouch: Decor = {
       for (let i = 0; i < 6; i++) p.rc.line(900, CEIL + i * 26, 900 - i * 30, CEIL, thin(p.s + 50 + i, "rgba(255,255,255,0.7)", 1.5));
       p.rc.ellipse(720, FLOOR_Y - 26, 160, 52, solid(p.s + 60, "#c9a44a"));
     },
-    // Launch Pad: a giant slingshot aimed at a target
+    // Launch Pad: a giant slingshot aimed at a target, left of the spring pad
     (p) => {
-      p.rc.line(640, FLOOR_Y, 660, FLOOR_Y - 180, ink(p.s, { strokeWidth: 12, stroke: "#6b4a2a" }));
-      p.rc.line(660, FLOOR_Y - 180, 620, FLOOR_Y - 260, ink(p.s + 1, { strokeWidth: 10, stroke: "#6b4a2a" }));
-      p.rc.line(660, FLOOR_Y - 180, 700, FLOOR_Y - 260, ink(p.s + 2, { strokeWidth: 10, stroke: "#6b4a2a" }));
+      p.rc.line(300, FLOOR_Y, 320, FLOOR_Y - 180, ink(p.s, { strokeWidth: 12, stroke: "#6b4a2a" }));
+      p.rc.line(320, FLOOR_Y - 180, 280, FLOOR_Y - 260, ink(p.s + 1, { strokeWidth: 10, stroke: "#6b4a2a" }));
+      p.rc.line(320, FLOOR_Y - 180, 360, FLOOR_Y - 260, ink(p.s + 2, { strokeWidth: 10, stroke: "#6b4a2a" }));
       p.rc.curve(
         [
-          [620, FLOOR_Y - 260],
-          [600, FLOOR_Y - 200],
-          [700, FLOOR_Y - 260],
+          [280, FLOOR_Y - 260],
+          [260, FLOOR_Y - 200],
+          [360, FLOOR_Y - 260],
         ],
         ink(p.s + 3, { stroke: "#e0528a", strokeWidth: 5 }),
       );
       for (let i = 0; i < 4; i++) p.rc.circle(856, 380, 120 - i * 28, solid(p.s + 4 + i, i % 2 ? "#f3eadb" : "#c0392b", { strokeWidth: 3 }));
-      label(p.ctx, "LAUNCH", 620, FLOOR_Y - 20, 20, "#f3eadb");
     },
     // Web Loft: a giant web and a leaf hammock
     (p) => {
@@ -974,14 +976,15 @@ const molandak: Decor = {
   sky: "vortex",
   frame: "#9aa6b2",
   curtain: null,
+  art: { 0: [[580, 900]] }, // the wall of clocks
   rooms: [
-    // Clock Hall: a wall of clocks that all disagree, and a grandfather clock
+    // Clock Hall: a wall of clocks that all disagree, and a grandfather clock (right side: the portal is by the door)
     (p) => {
       const clocks: [number, number, number][] = [
-        [320, 180, 56],
-        [410, 250, 40],
-        [300, 300, 38],
-        [420, 140, 30],
+        [640, 180, 56],
+        [730, 250, 40],
+        [620, 300, 38],
+        [740, 140, 30],
       ];
       clocks.forEach(([x, y, r], i) => {
         p.rc.circle(x, y, r * 2, solid(p.s + i, "#f3eadb"));
@@ -989,11 +992,11 @@ const molandak: Decor = {
         p.rc.line(x, y, x + Math.cos(a) * r * 0.6, y + Math.sin(a) * r * 0.6, ink(p.s + 10 + i, { strokeWidth: 3 }));
         p.rc.line(x, y, x + Math.cos(a * 3) * r * 0.8, y + Math.sin(a * 3) * r * 0.8, ink(p.s + 20 + i, { strokeWidth: 2 }));
       });
-      p.rc.rectangle(150, FLOOR_Y - 300, 90, 300, solid(p.s + 30, "#6e4e34"));
-      p.rc.circle(195, FLOOR_Y - 250, 60, solid(p.s + 31, "#f3eadb"));
-      p.rc.line(195, FLOOR_Y - 190, 195, FLOOR_Y - 90, ink(p.s + 32, { strokeWidth: 3 }));
-      p.rc.circle(195, FLOOR_Y - 84, 26, solid(p.s + 33, "#f0c35a", { strokeWidth: 2 }));
-      label(p.ctx, "IT IS: LATER", 330, 380, 18, "#cfe0ff");
+      p.rc.rectangle(800, FLOOR_Y - 300, 90, 300, solid(p.s + 30, "#6e4e34"));
+      p.rc.circle(845, FLOOR_Y - 250, 60, solid(p.s + 31, "#f3eadb"));
+      p.rc.line(845, FLOOR_Y - 190, 845, FLOOR_Y - 90, ink(p.s + 32, { strokeWidth: 3 }));
+      p.rc.circle(845, FLOOR_Y - 84, 26, solid(p.s + 33, "#f0c35a", { strokeWidth: 2 }));
+      label(p.ctx, "IT IS: LATER", 680, 380, 18, "#cfe0ff");
     },
     // Paradox Archive: drawers labelled YESTERDAY and TOMORROW, an hourglass
     (p) => {
@@ -1075,13 +1078,11 @@ const molandak: Decor = {
       label(p.ctx, "♪", 220, FLOOR_Y - 230, 34, INK);
       label(p.ctx, "BEFORE CHOG", 700, 200, 22, "#cfe0ff");
     },
-    // Time Vault: a portal on the wall (it spins), stopped clocks
+    // Time Vault: the real portal lands here (drawn by the plan), and a crate of paradoxes
     (p) => {
-      for (let i = 0; i < 5; i++) p.rc.circle(190, 260, 220 - i * 40, ink(p.s + i, { stroke: i % 2 ? "#5b7cff" : "#a07cff", strokeWidth: 5 }));
-      glow(p.ctx, 190, 260, 200, "160,124,255", 0.55);
-      label(p.ctx, "NOW", 190, 270, 24, "#f3eadb");
       p.rc.rectangle(620, FLOOR_Y - 100, 140, 100, solid(p.s + 10, "#5c6670"));
       label(p.ctx, "PARADOX", 690, FLOOR_Y - 46, 18, "#f0c35a");
+      label(p.ctx, "stopped at: NOW", 690, FLOOR_Y - 116, 18, "#cfe0ff", "'Patrick Hand'");
     },
   ],
 };
@@ -1104,6 +1105,7 @@ const mongrod: Decor = {
   frame: "#2a1414",
   curtain: "#b8323a",
   dim: [0.12, 0.12, 0.1, 0.14, 0.12, 0.18],
+  art: { 2: [[560, 790]] }, // the forge's shield and spear
   rooms: [
     // Gate: a portcullis on the wall and wall torches
     (p) => {

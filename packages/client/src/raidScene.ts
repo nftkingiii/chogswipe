@@ -196,7 +196,7 @@ export class RaidScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(INK);
 
     // night city patches behind each window; their crop shifts with the camera for depth
-    for (const [room, win] of Object.entries(windowsFor(this.plan))) {
+    for (const [room, win] of Object.entries(windowsFor(this.plan, theme.decor?.art))) {
       if (!win) continue;
       const r = Number(room);
       const [wx, wy, ww, wh] = win;

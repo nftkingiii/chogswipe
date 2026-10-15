@@ -49,7 +49,7 @@ export const DEFAULT_THEME: Theme = {
 const px = (x: number) => (x / ROOM_W) * ROOM_PX;
 
 export function bakeRooms(scene: Phaser.Scene, theme: Theme = DEFAULT_THEME, plan: FloorPlan = HOUSE_PLAN) {
-  const windows = windowsFor(plan);
+  const windows = windowsFor(plan, theme.decor?.art);
   for (let r = 0; r < 6; r++) bakeRoom(scene, r, theme, plan, windows[r]);
   bakeLockedDoor(scene);
   bakeFrontDoor(scene);
@@ -178,11 +178,11 @@ function linkSpans(plan: FloorPlan, room: number): [number, number][] {
   return out;
 }
 
-/** One window per room, kept clear of this plan's stairs, pads, portals and vault. */
-export function windowsFor(plan: FloorPlan): Record<number, Pane | undefined> {
+/** One window per room, kept clear of this plan's stairs, pads, portals and vault, and of the heist's wall art. */
+export function windowsFor(plan: FloorPlan, art: Record<number, [number, number][]> = {}): Record<number, Pane | undefined> {
   const out: Record<number, Pane | undefined> = {};
   for (let r = 0; r < ROOMS; r++) {
-    const spans = linkSpans(plan, r);
+    const spans = [...linkSpans(plan, r), ...(art[r] ?? [])];
     const free = (p: Pane) => spans.every(([a, b]) => p[0] + p[2] + 30 < a || p[0] - 30 > b);
     const home = WINDOWS[r];
     out[r] = home && free(home) ? home : r === plan.vault.room && plan === HOUSE_PLAN ? undefined : SPARE_PANES.find(free);
