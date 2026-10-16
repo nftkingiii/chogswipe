@@ -73,6 +73,10 @@
   .three { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-bottom: 16px; }
   .chip { display: inline-block; background: var(--chip); border-radius: 8px; padding: 0 8px; font-size: 15px; }
   [hidden] { display: none !important; }
+  .modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(28, 22, 24, .6); padding: 16px; }
+  .sheet { width: min(900px, 100%); max-height: 100%; overflow: auto; }
+  .sheet img { display: block; width: 100%; height: auto; border-radius: 12px; border: 3px solid var(--ink); margin: 6px 0 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 </style>
 </head>
 <body>
@@ -82,6 +86,7 @@
     <div class="who" id="who" hidden>
       <span id="addr"></span>
       <span class="chip" id="updated"></span>
+      <button id="share">Share card</button>
       <button id="refresh">Refresh</button>
       <button id="signout">Sign out</button>
     </div>
@@ -116,6 +121,19 @@
   </main>
 </div>
 <div class="tip" id="tip"></div>
+<div class="modal" id="modal" hidden>
+  <div class="card sheet">
+    <h2>SHARE CARD</h2>
+    <div class="sub">This week's real numbers, 1200 × 675, ready for X.</div>
+    <img id="card-img" alt="Chogswipe weekly stats card" />
+    <div class="row">
+      <button class="primary" id="card-dl">Download PNG</button>
+      <button id="card-copy">Copy image</button>
+      <button id="card-close">Close</button>
+      <span id="card-msg" class="empty"></span>
+    </div>
+  </div>
+</div>
 
 <script>
   // The page is public, the numbers are not: /admin/stats only answers a session signed by an admin wallet.
@@ -128,7 +146,7 @@
   const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
   const MODE_NAMES = { lore: "Lore heists", daily: "Daily heist", test: "Hideout tests", live: "Holder raids" };
 
-  let token = null;
+  let token = null, last = null;
   try { token = sessionStorage.getItem(TOKEN); } catch { /* private mode */ }
 
   const msg = (t) => ($("msg").textContent = t);
@@ -195,6 +213,7 @@
     }
     $("gate").hidden = true; $("dash").hidden = false; $("who").hidden = false;
     $("updated").textContent = "updated " + new Date(st.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    last = st;
     render(st);
   }
 
@@ -275,6 +294,115 @@
         `<div class="empty" style="font-size:14px;margin-top:6px">${esc(unit)}${note ? " · " + esc(note) : ""}</div>`
       : `<div class="empty">Nothing yet.${note ? " " + esc(note) : ""}</div>`;
   }
+
+  // ---------------------------------------------------------------- share card
+  // Drawn on a canvas in the game's own look: paper, ink outlines, sticker tiles, the Chog and the cast.
+  const CARD = { w: 1200, h: 675 };
+  const PAL = { paper: "#f3eadb", card: "#fffaf0", ink: "#1c1618", pink: "#e0528a", gold: "#f0c35a", mint: "#7ec4a8", mute: "#5a4d50", blue: "#2a78d6" };
+  const loadImg = (src) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
+
+  async function drawCard(st) {
+    await Promise.all([document.fonts.load('80px "Luckiest Guy"'), document.fonts.load('30px "Patrick Hand"')]).catch(() => {});
+    const [chog, cast] = await Promise.all([loadImg("/sprites/chog.webp"), loadImg("/sprites/monanimals.webp")]);
+    const c = document.createElement("canvas"); c.width = CARD.w * 2; c.height = CARD.h * 2;
+    const g = c.getContext("2d"); g.scale(2, 2);
+    const T = (str, x, y, size, o = {}) => {
+      g.save(); g.font = `${size}px ${o.body ? '"Patrick Hand"' : '"Luckiest Guy"'}, sans-serif`; g.textAlign = o.align || "left";
+      if (o.max) { let s2 = size; while (s2 > 12 && g.measureText(str).width > o.max) { s2 -= 2; g.font = `${s2}px ${o.body ? '"Patrick Hand"' : '"Luckiest Guy"'}, sans-serif`; } }
+      if (o.shadow) { g.fillStyle = o.shadow; g.fillText(str, x + size * .05, y + size * .06); }
+      g.fillStyle = o.color || PAL.ink; g.fillText(str, x, y); g.restore();
+    };
+    const box = (x, y, w, h, fill, rot = 0, r = 18) => {
+      g.save(); g.translate(x + w / 2, y + h / 2); g.rotate(rot * Math.PI / 180); g.translate(-w / 2, -h / 2);
+      g.fillStyle = PAL.ink; g.beginPath(); g.roundRect(6, 8, w, h, r); g.fill();
+      g.fillStyle = fill; g.beginPath(); g.roundRect(0, 0, w, h, r); g.fill();
+      g.lineWidth = 4; g.strokeStyle = PAL.ink; g.beginPath(); g.roundRect(0, 0, w, h, r); g.stroke();
+      g.restore();
+    };
+    // paper with the menu screens' doodles
+    g.fillStyle = PAL.paper; g.fillRect(0, 0, CARD.w, CARD.h);
+    g.strokeStyle = "rgba(28,22,24,0.08)"; g.lineWidth = 2;
+    for (let i = 0; i < 22; i++) { g.beginPath(); g.arc((i * 211) % CARD.w, (i * 137) % CARD.h, 12 + (i % 4) * 7, 0, Math.PI * 2); g.stroke(); }
+
+    const days = st.days.slice(-7);
+    const fmtD = (d) => new Date(d + "T00:00:00Z").toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
+    // header
+    T("CHOGSWIPE", 48, 92, 64, { shadow: PAL.pink });
+    box(52, 116, 330, 44, PAL.gold, -2, 12);
+    g.save(); g.translate(52 + 165, 138); g.rotate(-2 * Math.PI / 180); T(`THIS WEEK · ${fmtD(days[0].day)} – ${fmtD(days[6].day)}`, 0, 9, 21, { align: "center", max: 300 }); g.restore();
+
+    // hero: players this week
+    T(Number(st.totals.visitors7d).toLocaleString(), 48, 300, 132, { color: PAL.pink, shadow: PAL.ink });
+    T("PLAYERS DROPPED IN", 54, 346, 34);
+
+    // sticker tiles
+    const played = st.heists7d.filter((h) => h.starts > 0);
+    const fav = [...played].sort((a, b) => b.starts - a.starts)[0];
+    const tough = [...played].filter((h) => h.starts >= 3).sort((a, b) => a.escapes / a.starts - b.escapes / b.starts)[0];
+    const rate = st.totals.plays7d ? Math.round((st.totals.escapes7d / st.totals.plays7d) * 100) : 0;
+    const tiles = [
+      [Number(st.totals.plays7d).toLocaleString(), "HEISTS PLAYED", PAL.card, -2],
+      [Number(st.totals.escapes7d).toLocaleString(), "CLEAN SWIPES", PAL.card, 1.5],
+      [`${rate}%`, "ESCAPE RATE", PAL.card, -1],
+    ];
+    tiles.forEach(([v, l, fill, rot], i) => {
+      const x = 48 + i * 205, y = 392;
+      box(x, y, 185, 128, fill, rot);
+      g.save(); g.translate(x + 92, y + 64); g.rotate(rot * Math.PI / 180);
+      T(v, 0, 8, 54, { align: "center", max: 160 }); T(l, 0, 42, 19, { align: "center", color: PAL.mute, max: 165 });
+      g.restore();
+    });
+    // favourite and toughest heists
+    const line = (y, label, text) => { T(label, 52, y, 20, { color: PAL.pink }); T(text, 52 + 150, y, 26, { body: true, max: 480 }); };
+    if (fav) line(570, "MOST PLAYED", fav.name);
+    if (tough) line(606, "TOUGHEST", `${tough.name} · ${Math.round((tough.escapes / tough.starts) * 100)}% get out`);
+
+    // right: last 7 days of players as columns, on a card
+    box(700, 60, 452, 250, PAL.card, 1.5);
+    g.save(); g.translate(926, 185); g.rotate(1.5 * Math.PI / 180); g.translate(-226, -125);
+    T("PLAYERS PER DAY", 24, 40, 22);
+    const max = Math.max(1, ...days.map((d) => d.visitors)), base = 214, top = 70, slot = 404 / 7;
+    g.strokeStyle = "rgba(28,22,24,0.25)"; g.lineWidth = 2; g.beginPath(); g.moveTo(24, base); g.lineTo(428, base); g.stroke();
+    days.forEach((d, i) => {
+      const h = ((base - top) * d.visitors) / max, w = 30, x = 24 + slot * i + (slot - w) / 2, y = base - h;
+      if (h > 0) { g.fillStyle = i === 6 ? PAL.pink : PAL.ink; g.beginPath(); g.roundRect(x, y, w, h, [5, 5, 0, 0]); g.fill(); }
+      T(new Date(d.day + "T00:00:00Z").toLocaleDateString("en", { weekday: "narrow", timeZone: "UTC" }), x + w / 2, base + 26, 18, { align: "center", body: true, color: PAL.mute });
+      if (i === 6) T(String(d.visitors), x + w / 2, y - 8, 20, { align: "center" });
+    });
+    g.restore();
+
+    // the Chog with the swag, the cast cheering behind
+    if (cast) [[4, 760, 590, 160], [1, 870, 596, 140], [0, 1125, 592, 150]].forEach(([i, x, y, s]) => g.drawImage(cast, i * 300, 0, 300, 300, x - s / 2, y - s, s, s));
+    if (chog) g.drawImage(chog, 6 * 260, 0, 260, 260, 880, 352, 240, 240);
+    // footer pill
+    box(840, 598, 300, 52, PAL.pink, 0, 16);
+    T("chogswipe.xyz", 990, 634, 30, { align: "center", color: PAL.paper });
+    T("free to play · built on Monad", 818, 632, 19, { align: "right", body: true, color: PAL.mute });
+    return c;
+  }
+
+  let cardBlob = null;
+  async function openCard() {
+    if (!last) return;
+    $("card-msg").textContent = "drawing…";
+    $("modal").hidden = false;
+    const c = await drawCard(last);
+    cardBlob = await new Promise((ok) => c.toBlob(ok, "image/png"));
+    $("card-img").src = URL.createObjectURL(cardBlob);
+    $("card-msg").textContent = "";
+  }
+  $("share").onclick = openCard;
+  $("card-close").onclick = () => ($("modal").hidden = true);
+  $("modal").addEventListener("pointerdown", (e) => e.target === $("modal") && ($("modal").hidden = true));
+  $("card-dl").onclick = () => {
+    if (!cardBlob) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(cardBlob); a.download = `chogswipe-week-${last.days.at(-1).day}.png`; a.click();
+  };
+  $("card-copy").onclick = async () => {
+    try { await navigator.clipboard.write([new ClipboardItem({ "image/png": cardBlob })]); $("card-msg").textContent = "Copied: paste it into your post."; }
+    catch { $("card-msg").textContent = "This browser can't copy images: use Download."; }
+  };
 
   const tip = $("tip");
   document.addEventListener("pointermove", (e) => {
