@@ -20,14 +20,14 @@
 <body>
 <main>
   <h1>Accept vault ownership</h1>
-  <p>Vault <code>0x3a519fDf34Fa98DCf268f4C9d456F50eED710e8D</code> on Monad mainnet.</p>
+  <p>Vault <code>0x21A1016A65416C5E63f1518cd0f5eDd4d2660445</code> on Monad mainnet.</p>
   <p>Connect the wallet the vault is waiting for (its pending owner), then accept. This sends one call, <code>acceptOwnership()</code>, with no MON attached.</p>
   <button id="go">Connect wallet and accept</button>
   <div id="log"></div>
 </main>
 <script>
   // Ownable2Step: the deployer called transferOwnership(pending owner); the pending owner finishes it here.
-  const VAULT = "0x3a519fDf34Fa98DCf268f4C9d456F50eED710e8D";
+  const VAULT = "0x21A1016A65416C5E63f1518cd0f5eDd4d2660445";
   const CHAIN = "0x8f"; // Monad mainnet, 143
   const SEL = { accept: "0x79ba5097", owner: "0x8da5cb5b", pending: "0xe30c3978" };
   const log = (s) => (document.getElementById("log").textContent += s + "\n");
