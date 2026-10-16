@@ -8,9 +8,12 @@ import { PlayersScene } from "./playersScene.js";
 import { VaultScene } from "./vaultScene.js";
 import { HistoryScene } from "./historyScene.js";
 import { GAME_H, fitToWindow, gameWidth, maxSize, phoneFullscreen } from "./screen.js";
+import { trackVisit } from "./track.js";
 
 startLoader();
 phoneFullscreen();
+// skip the autopilot demo and video captures, so the numbers are real players
+if (!new URLSearchParams(location.search).has("autopilot")) trackVisit();
 
 async function start() {
   // Hand-drawn fonts are used inside canvas textures, so wait for them first.

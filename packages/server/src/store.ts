@@ -39,6 +39,15 @@ export interface Feedback {
   where?: string;
 }
 
+/** One anonymous analytics event: a page visit, a heist started or finished. */
+export interface GameEvent {
+  at: number;
+  type: string;
+  /** random id kept in the player's browser; no wallet, no IP */
+  visitor: string;
+  data: Record<string, string | number>;
+}
+
 /** Persistence for the referee. MemoryStore for local runs and tests; a Postgres store replaces it on deploy. */
 export interface Store {
   putNonce(nonce: string, expiresAt: number): Promise<void>;
@@ -59,6 +68,9 @@ export interface Store {
   dailyTop(day: string, limit: number): Promise<DailyRun[]>;
   putFeedback(f: Feedback): Promise<void>;
   listFeedback(limit: number): Promise<Feedback[]>;
+  putEvent(e: GameEvent): Promise<void>;
+  /** events at or after `since`, oldest first, at most `limit` */
+  eventsSince(since: number, limit: number): Promise<GameEvent[]>;
 }
 
 const faster = (a: DailyRun, b: DailyRun) => a.ticks - b.ticks || a.at - b.at;
@@ -71,6 +83,7 @@ export class MemoryStore implements Store {
   private raids = new Map<string, RaidRecord>();
   private daily = new Map<string, DailyRun>();
   private feedback: Feedback[] = [];
+  private events: GameEvent[] = [];
 
   async putNonce(nonce: string, expiresAt: number) {
     this.nonces.set(nonce, expiresAt);
@@ -129,5 +142,11 @@ export class MemoryStore implements Store {
   }
   async listFeedback(limit: number) {
     return this.feedback.slice(-limit).reverse();
+  }
+  async putEvent(e: GameEvent) {
+    this.events.push(e);
+  }
+  async eventsSince(since: number, limit: number) {
+    return this.events.filter((e) => e.at >= since).slice(0, limit);
   }
 }

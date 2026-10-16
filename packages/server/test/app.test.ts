@@ -245,9 +245,11 @@ describe("referee", () => {
 describe("public demo", () => {
   it("keeps the holder API shut and the health check open", async () => {
     const app = await buildApp({ chain: fakeChain(), store: new MemoryStore(), signer: referee, chainId: 143, allowedOrigin: ORIGIN, holderMode: false });
-    for (const [method, url] of [["GET", "/auth/nonce"], ["POST", "/auth/verify"], ["GET", "/me"], ["GET", "/targets"], ["POST", "/raids"], ["POST", "/raids/x/finish"], ["PUT", "/hideouts/1"]] as const) {
+    for (const [method, url] of [["GET", "/me"], ["GET", "/targets"], ["POST", "/raids"], ["POST", "/raids/x/finish"], ["PUT", "/hideouts/1"]] as const) {
       expect((await app.inject({ method, url })).statusCode, url).toBe(403);
     }
+    // sign-in stays open (the team uses it for the dashboard); on its own it unlocks nothing above
+    expect((await app.inject({ method: "GET", url: "/auth/nonce" })).statusCode).toBe(200);
     const health = await app.inject({ method: "GET", url: "/health" });
     expect(health.statusCode).toBe(200);
     expect(health.json().holderMode).toBe(false);
@@ -313,5 +315,53 @@ describe("daily heist and feedback", () => {
     expect((await app.inject({ method: "GET", url: "/feedback" })).statusCode).toBe(404);
     const list = await app.inject({ method: "GET", url: "/feedback", headers: { "x-feedback-key": "k" } });
     expect(list.json().feedback[0]).toMatchObject({ text: "love the guards", contact: "@fan", where: "map" });
+  });
+});
+
+describe("analytics", () => {
+  let clock: number;
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  beforeEach(async () => {
+    clock = Date.parse("2026-10-16T12:00:00Z");
+    app = await buildApp({ chain: fakeChain(), store: new MemoryStore(), signer: referee, chainId: 143, allowedOrigin: ORIGIN, holderMode: false, now: () => clock, adminAddresses: [other.address] });
+  });
+
+  async function signIn(account = player): Promise<string> {
+    const { nonce } = (await app.inject({ method: "GET", url: "/auth/nonce" })).json();
+    const message = createSiweMessage({ address: account.address, chainId: 143, domain: "localhost:5173", nonce, uri: ORIGIN, version: "1", issuedAt: new Date(clock) });
+    const signature = await account.signMessage({ message });
+    return (await app.inject({ method: "POST", url: "/auth/verify", payload: { message, signature } })).json().token;
+  }
+  const send = (type: string, visitor: string, data: object = {}) => app.inject({ method: "POST", url: "/events", payload: { type, visitor, data } });
+
+  it("records clean events and refuses junk", async () => {
+    expect((await send("visit", "abcdef1234", { device: "phone", ref: "x.com" })).statusCode).toBe(200);
+    expect((await send("hack", "abcdef1234")).statusCode).toBe(400);
+    expect((await send("visit", "<script>")).statusCode).toBe(400);
+  });
+
+  it("shows the dashboard only to an admin wallet", async () => {
+    await send("visit", "visitor0001", { device: "phone", ref: "x.com" });
+    await send("visit", "visitor0002", { device: "desktop" });
+    await send("heist_start", "visitor0001", { slug: "fwog-pond", mode: "lore" });
+    await send("heist_end", "visitor0001", { slug: "fwog-pond", mode: "lore", result: "escaped", stars: 3, secs: 31.2, extra: "dropped" });
+    await send("heist_start", "visitor0002", { slug: "fwog-pond", mode: "daily" });
+    await send("heist_end", "visitor0002", { slug: "fwog-pond", mode: "daily", result: "caught", stars: 0, secs: 40 });
+
+    expect((await app.inject({ method: "GET", url: "/admin/stats" })).statusCode).toBe(401);
+    const notAdmin = await signIn(player);
+    expect((await app.inject({ method: "GET", url: "/admin/stats", headers: { authorization: `Bearer ${notAdmin}` } })).statusCode).toBe(403);
+
+    const admin = await signIn(other);
+    const res = await app.inject({ method: "GET", url: "/admin/stats", headers: { authorization: `Bearer ${admin}` } });
+    expect(res.statusCode).toBe(200);
+    const st = res.json();
+    expect(st.totals).toMatchObject({ visitorsToday: 2, visitors7d: 2, plays7d: 2, escapes7d: 1, playsToday: 2 });
+    expect(st.devices7d).toEqual({ phone: 1, desktop: 1 });
+    expect(st.modes7d).toEqual({ lore: 1, daily: 1 });
+    expect(st.referrers7d).toEqual([{ host: "x.com", visitors: 1 }]);
+    expect(st.heists7d.find((h: { slug: string }) => h.slug === "fwog-pond")).toMatchObject({ starts: 2, escapes: 1, avgEscapeSecs: 31.2, threeStars: 1 });
+    expect(st.days).toHaveLength(14);
+    expect(st.days.at(-1)).toMatchObject({ day: "2026-10-16", visitors: 2, plays: 2, escapes: 1 });
   });
 });

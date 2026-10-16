@@ -2,7 +2,7 @@
 import type { Pool } from "pg";
 import type { Address, Hex } from "viem";
 import type { TrapPlacement } from "@chogswipe/sim";
-import type { DailyRun, Feedback, RaidRecord, Store } from "./store.js";
+import type { DailyRun, Feedback, GameEvent, RaidRecord, Store } from "./store.js";
 
 export const SCHEMA = `
 create table if not exists nonces (nonce text primary key, expires_at bigint not null);
@@ -31,6 +31,8 @@ create table if not exists daily_runs (
   primary key (day, name_key)
 );
 create table if not exists feedback (id serial primary key, at bigint not null, text text not null, contact text, place text);
+create table if not exists events (id bigserial primary key, at bigint not null, type text not null, visitor text not null, data jsonb not null);
+create index if not exists events_at on events (at);
 `;
 
 export class PgStore implements Store {
@@ -135,5 +137,17 @@ export class PgStore implements Store {
       [limit],
     );
     return r.rows.map((x) => ({ at: Number(x.at), text: x.text, contact: x.contact ?? undefined, where: x.place ?? undefined }));
+  }
+
+  async putEvent(e: GameEvent) {
+    await this.pool.query("insert into events (at, type, visitor, data) values ($1, $2, $3, $4)", [e.at, e.type, e.visitor, JSON.stringify(e.data)]);
+  }
+
+  async eventsSince(since: number, limit: number) {
+    const r = await this.pool.query<{ at: string; type: string; visitor: string; data: GameEvent["data"] }>(
+      "select at, type, visitor, data from events where at >= $1 order by at limit $2",
+      [since, limit],
+    );
+    return r.rows.map((x) => ({ at: Number(x.at), type: x.type, visitor: x.visitor, data: x.data }));
   }
 }

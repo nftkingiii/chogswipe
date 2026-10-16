@@ -11,6 +11,8 @@ export interface Config {
   /** HOLDER_MODE=1 opens wallet sign-in and raids; off during the public demo */
   holderMode: boolean;
   feedbackKey?: string;
+  /** wallets that may open the analytics dashboard */
+  adminAddresses: string[];
 }
 
 function need(name: string): string {
@@ -30,5 +32,6 @@ export function loadConfig(): Config {
     allowedOrigin: process.env.ALLOWED_ORIGIN ?? "http://localhost:5173",
     holderMode: process.env.HOLDER_MODE === "1",
     feedbackKey: process.env.FEEDBACK_KEY || undefined,
+    adminAddresses: (process.env.ADMIN_ADDRESSES ?? "0xEb87Db53c6307aCf931feF3F4fa7e14F23129621").split(",").map((a) => a.trim()).filter(Boolean),
   };
 }

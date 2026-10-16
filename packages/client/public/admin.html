@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Chogswipe analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Patrick+Hand&display=swap" rel="stylesheet" />
+<style>
+  /* The game's paper-and-ink look. Chart colours are validated for colour-blind separation and contrast on both surfaces. */
+  :root {
+    color-scheme: light;
+    --page: #f3eadb; --surface: #fffaf0; --ink: #1c1618; --text-2: #5a4d50; --muted: #8a7d70; --line: rgba(28, 22, 24, .14);
+    --series-1: #e0528a; --series-2: #2a78d6; --shadow: #1c1618; --chip: #f6e3a8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #171314; --surface: #211b1d; --ink: #f3eadb; --text-2: #cfc3b6; --muted: #a2968a; --line: rgba(243, 234, 219, .14);
+      --series-1: #e0528a; --series-2: #3987e5; --shadow: #000; --chip: #4a3d22;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #171314; --surface: #211b1d; --ink: #f3eadb; --text-2: #cfc3b6; --muted: #a2968a; --line: rgba(243, 234, 219, .14);
+    --series-1: #e0528a; --series-2: #3987e5; --shadow: #000; --chip: #4a3d22;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 18px/1.4 "Patrick Hand", system-ui, sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; margin-bottom: 18px; }
+  h1 { font: 34px "Luckiest Guy", sans-serif; letter-spacing: 1px; margin: 0; }
+  h1 span { color: var(--series-1); }
+  h2 { font: 20px "Luckiest Guy", sans-serif; letter-spacing: .5px; margin: 0 0 10px; }
+  .who { display: flex; gap: 8px; align-items: center; color: var(--text-2); font-size: 16px; flex-wrap: wrap; }
+  button { font: 16px "Luckiest Guy", sans-serif; letter-spacing: .5px; padding: 9px 14px 6px; border: 3px solid var(--ink); border-radius: 12px;
+    background: var(--surface); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--series-1); color: #fff; box-shadow: 4px 5px 0 var(--shadow); font-size: 20px; padding: 12px 20px 8px; }
+  .card { background: var(--surface); border: 3px solid var(--ink); border-radius: 18px; box-shadow: 5px 6px 0 var(--shadow); padding: 16px 18px; min-width: 0; }
+  .gate { max-width: 560px; margin: 60px auto; text-align: center; }
+  .gate p { color: var(--text-2); }
+  #msg { margin-top: 12px; min-height: 1.4em; }
+  .grid { display: grid; gap: 16px; }
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 16px; }
+  .kpi .v { font: 40px "Luckiest Guy", sans-serif; line-height: 1.1; margin-top: 4px; }
+  .kpi .l { color: var(--text-2); font-size: 16px; }
+  .kpi .s { color: var(--muted); font-size: 15px; }
+  .two { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-bottom: 16px; }
+  .sub { color: var(--muted); font-size: 15px; margin: -6px 0 8px; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  svg text { font-family: "Patrick Hand", sans-serif; fill: var(--text-2); }
+  .tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 2px solid var(--ink); border-radius: 10px;
+    padding: 6px 10px; font-size: 15px; box-shadow: 3px 4px 0 var(--shadow); display: none; white-space: nowrap; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 16px; }
+  th { text-align: left; color: var(--muted); font-weight: normal; font-size: 15px; padding: 4px 8px; border-bottom: 2px solid var(--line); white-space: nowrap; }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .rate { display: flex; align-items: center; gap: 8px; min-width: 150px; }
+  .rate .track { width: 110px; flex: none; }
+  .rate i { display: block; height: 12px; border-radius: 0 4px 4px 0; background: var(--series-1); }
+  .rate b { font-weight: normal; min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+  .hbar { display: grid; grid-template-columns: minmax(80px, 140px) 1fr auto; gap: 8px; align-items: center; margin: 6px 0; font-size: 16px; }
+  .hbar i { display: block; height: 14px; border-radius: 0 4px 4px 0; background: var(--series-2); }
+  .hbar .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+  .empty { color: var(--muted); font-size: 16px; }
+  .fb { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  .fb:last-child { border-bottom: 0; }
+  .fb .meta { color: var(--muted); font-size: 14px; }
+  .fb .t { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .three { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-bottom: 16px; }
+  .chip { display: inline-block; background: var(--chip); border-radius: 8px; padding: 0 8px; font-size: 15px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>CHOGSWIPE <span>ANALYTICS</span></h1>
+    <div class="who" id="who" hidden>
+      <span id="addr"></span>
+      <span class="chip" id="updated"></span>
+      <button id="refresh">Refresh</button>
+      <button id="signout">Sign out</button>
+    </div>
+  </header>
+
+  <section class="card gate" id="gate">
+    <h2>TEAM ONLY</h2>
+    <p>Connect the team wallet and sign a free message to prove it's you. No transaction, no gas.</p>
+    <button class="primary" id="connect">Connect wallet</button>
+    <div id="msg"></div>
+  </section>
+
+  <main id="dash" hidden>
+    <div class="grid kpis" id="kpis"></div>
+    <div class="grid two">
+      <section class="card"><h2>VISITORS PER DAY</h2><div class="sub">unique browsers, last 14 days (UTC)</div><div id="chart-visitors"></div></section>
+      <section class="card"><h2>HEISTS PLAYED PER DAY</h2><div class="sub">raids started, last 14 days (UTC)</div><div id="chart-plays"></div></section>
+    </div>
+    <section class="card" style="margin-bottom:16px">
+      <h2>HEISTS · LAST 7 DAYS</h2>
+      <div class="tablewrap"><table id="heists"></table></div>
+    </section>
+    <div class="grid three">
+      <section class="card"><h2>DEVICES · 7 DAYS</h2><div id="devices"></div></section>
+      <section class="card"><h2>HOW THEY PLAY · 7 DAYS</h2><div id="modes"></div></section>
+      <section class="card"><h2>WHERE THEY CAME FROM · 7 DAYS</h2><div id="refs"></div></section>
+    </div>
+    <div class="grid two">
+      <section class="card"><h2 id="daily-title">TODAY'S DAILY HEIST</h2><div class="tablewrap"><table id="daily"></table></div></section>
+      <section class="card"><h2 id="fb-title">LATEST FEEDBACK</h2><div id="feedback"></div></section>
+    </div>
+  </main>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+  // The page is public, the numbers are not: /admin/stats only answers a session signed by an admin wallet.
+  const TOKEN = "chogswipe.adminSession";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const fmt = (n) => Number(n).toLocaleString();
+  const clock = (ticks) => { const s = ticks / 30; return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`; };
+  const stars = (n) => "★".repeat(n) + "☆".repeat(3 - n);
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const MODE_NAMES = { lore: "Lore heists", daily: "Daily heist", test: "Hideout tests", live: "Holder raids" };
+
+  let token = null;
+  try { token = sessionStorage.getItem(TOKEN); } catch { /* private mode */ }
+
+  const msg = (t) => ($("msg").textContent = t);
+
+  async function api(path, init = {}) {
+    const res = await fetch(path, { ...init, headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}), ...init.headers } });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { const e = new Error(body.error || `request failed (${res.status})`); e.status = res.status; throw e; }
+    return body;
+  }
+
+  async function signIn() {
+    const eth = window.ethereum;
+    if (!eth) return msg("No wallet found. Open this page in your wallet's browser, or a desktop browser with the extension.");
+    $("connect").disabled = true;
+    try {
+      const [address] = await eth.request({ method: "eth_requestAccounts" });
+      const { nonce } = await api("/auth/nonce");
+      // EIP-4361 sign-in message, the same shape the game uses
+      const message = [
+        `${location.host} wants you to sign in with your Ethereum account:`,
+        address,
+        "",
+        "Sign in to Chogswipe analytics.",
+        "",
+        `URI: ${location.origin}`,
+        "Version: 1",
+        "Chain ID: 143",
+        `Nonce: ${nonce}`,
+        `Issued At: ${new Date().toISOString()}`,
+      ].join("\n");
+      const hex = "0x" + Array.from(new TextEncoder().encode(message), (b) => b.toString(16).padStart(2, "0")).join("");
+      msg("Sign the message in your wallet…");
+      const signature = await eth.request({ method: "personal_sign", params: [hex, address] });
+      const r = await api("/auth/verify", { method: "POST", body: JSON.stringify({ message, signature }) });
+      token = r.token;
+      $("addr").textContent = address.slice(0, 6) + "…" + address.slice(-4);
+      try { sessionStorage.setItem(TOKEN, token); } catch { /* ignore */ }
+      msg("");
+      await load();
+    } catch (e) {
+      msg(e.message || String(e));
+    } finally {
+      $("connect").disabled = false;
+    }
+  }
+
+  function signOut() {
+    token = null;
+    try { sessionStorage.removeItem(TOKEN); } catch { /* ignore */ }
+    $("dash").hidden = true; $("who").hidden = true; $("gate").hidden = false;
+  }
+
+  async function load() {
+    let st;
+    try {
+      st = await api("/admin/stats");
+    } catch (e) {
+      signOut();
+      if (e.status === 403) msg("This wallet isn't on the team list, so it can't view analytics.");
+      else if (e.status === 401) msg("");
+      else msg(e.message);
+      return;
+    }
+    $("gate").hidden = true; $("dash").hidden = false; $("who").hidden = false;
+    $("updated").textContent = "updated " + new Date(st.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    render(st);
+  }
+
+  function render(st) {
+    const t = st.totals;
+    const kpis = [
+      ["Visitors today", fmt(t.visitorsToday), `${fmt(t.playsToday)} heists played`],
+      ["Visitors · 7 days", fmt(t.visitors7d), `${fmt(t.visitors30d)} in 30 days`],
+      ["Heists played · 7 days", fmt(t.plays7d), `${fmt(t.escapes7d)} escapes`],
+      ["Escape rate · 7 days", `${pct(t.escapes7d, t.plays7d)}%`, "escapes ÷ heists started"],
+      ["Daily board today", fmt(st.daily.players), st.daily.name],
+      ["Feedback notes", fmt(st.feedback.total), "all time"],
+    ];
+    $("kpis").innerHTML = kpis.map(([l, v, s]) => `<div class="card kpi"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
+
+    columns($("chart-visitors"), st.days.map((d) => ({ label: d.day, value: d.visitors, tip: `${fmtDay(d.day)} · ${fmt(d.visitors)} visitors` })), "var(--series-1)");
+    columns($("chart-plays"), st.days.map((d) => ({ label: d.day, value: d.plays, tip: `${fmtDay(d.day)} · ${fmt(d.plays)} played · ${fmt(d.escapes)} escaped` })), "var(--series-2)");
+
+    const maxRate = 100;
+    $("heists").innerHTML = `<tr><th>Heist</th><th class="n">Played</th><th class="n">Escaped</th><th>Escape rate</th><th class="n">Avg escape</th><th class="n">3★ runs</th></tr>` +
+      st.heists7d.map((h) => {
+        const r = pct(h.escapes, h.starts);
+        return `<tr><td>${esc(h.name)}</td><td class="n">${fmt(h.starts)}</td><td class="n">${fmt(h.escapes)}</td>
+          <td><div class="rate"><span class="track"><i style="width:${h.starts ? Math.max(2, (r / maxRate) * 100) : 0}%"></i></span><b>${h.starts ? r + "%" : "–"}</b></div></td>
+          <td class="n">${h.avgEscapeSecs == null ? "–" : h.avgEscapeSecs.toFixed(1) + "s"}</td><td class="n">${fmt(h.threeStars)}</td></tr>`;
+      }).join("");
+
+    const d = st.devices7d;
+    bars($("devices"), [["Phone", d.phone], ["Desktop", d.desktop]], "visitors");
+    bars($("modes"), Object.entries(st.modes7d).sort((a, b) => b[1] - a[1]).map(([k, v]) => [MODE_NAMES[k] || k, v]), "heists");
+    bars($("refs"), st.referrers7d.map((r) => [r.host, r.visitors]), "visitors", "Direct visits and links from apps don't show a site.");
+
+    $("daily-title").textContent = `TODAY'S DAILY HEIST · ${st.daily.name.toUpperCase()}`;
+    $("daily").innerHTML = st.daily.top.length
+      ? `<tr><th class="n">#</th><th>Name</th><th class="n">Time</th><th>Stars</th></tr>` +
+        st.daily.top.map((r) => `<tr><td class="n">${r.rank}</td><td>${esc(r.name)}</td><td class="n">${clock(r.ticks)}</td><td>${stars(r.stars)}</td></tr>`).join("")
+      : `<tr><td class="empty">No times on today's board yet.</td></tr>`;
+
+    $("fb-title").textContent = `LATEST FEEDBACK · ${fmt(st.feedback.total)}`;
+    $("feedback").innerHTML = st.feedback.latest.length
+      ? st.feedback.latest.map((f) => `<div class="fb"><div class="meta">${esc(new Date(f.at).toLocaleString())}${f.where ? " · from " + esc(f.where) : ""}${f.contact ? " · " + esc(f.contact) : ""}</div><div class="t">${esc(f.text)}</div></div>`).join("")
+      : `<div class="empty">No feedback yet.</div>`;
+  }
+
+  const fmtDay = (d) => new Date(d + "T00:00:00Z").toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" });
+
+  // One-series column chart: thin columns from one baseline, 4px rounded tops, recessive grid, value on the latest day,
+  // and a hover tooltip per day with a hit target the full width of its slot.
+  function columns(el, pts, color) {
+    const W = 560, H = 220, L = 34, R = 8, T = 18, B = 26;
+    const max = Math.max(1, ...pts.map((p) => p.value));
+    const step = niceStep(max), top = Math.ceil(max / step) * step;
+    const y = (v) => T + (H - T - B) * (1 - v / top);
+    const slot = (W - L - R) / pts.length, bw = Math.min(24, slot * .6);
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(pts.length)} days">`;
+    for (let v = 0; v <= top; v += step) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${y(v) + 5}" text-anchor="end" font-size="13">${fmt(v)}</text>`;
+    pts.forEach((p, i) => {
+      const cx = L + slot * (i + .5), h = (H - T - B) * (p.value / top), x = cx - bw / 2, yy = H - B - h, r = Math.min(4, h);
+      if (h > 0) s += `<path d="M${x},${H - B} V${yy + r} Q${x},${yy} ${x + r},${yy} H${x + bw - r} Q${x + bw},${yy} ${x + bw},${yy + r} V${H - B} Z" fill="${color}"/>`;
+      if (i % 2 === pts.length % 2 || i === pts.length - 1) s += `<text x="${cx}" y="${H - 6}" text-anchor="middle" font-size="12">${esc(fmtDay(p.label).replace(/^\w+ /, ""))}</text>`;
+      if (i === pts.length - 1 && p.value > 0) s += `<text x="${cx}" y="${yy - 5}" text-anchor="middle" font-size="14" style="fill:var(--ink)">${fmt(p.value)}</text>`;
+      s += `<rect x="${L + slot * i}" y="${T}" width="${slot}" height="${H - T - B}" fill="transparent" data-tip="${esc(p.tip)}"/>`;
+    });
+    s += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="var(--muted)" stroke-width="1"/></svg>`;
+    el.innerHTML = s;
+  }
+
+  function niceStep(max) {
+    const raw = max / 4, p = 10 ** Math.floor(Math.log10(raw)), n = raw / p;
+    return Math.max(1, (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p);
+  }
+
+  // Horizontal one-series bars with the value written at the end.
+  function bars(el, rows, unit, note) {
+    const max = Math.max(1, ...rows.map((r) => r[1]));
+    el.innerHTML = rows.length && rows.some((r) => r[1] > 0)
+      ? rows.map(([label, v]) => `<div class="hbar"><span class="lbl" title="${esc(label)}">${esc(label)}</span><i style="width:${Math.max(v ? 2 : 0, (v / max) * 100)}%"></i><span>${fmt(v)}</span></div>`).join("") +
+        `<div class="empty" style="font-size:14px;margin-top:6px">${esc(unit)}${note ? " · " + esc(note) : ""}</div>`
+      : `<div class="empty">Nothing yet.${note ? " " + esc(note) : ""}</div>`;
+  }
+
+  const tip = $("tip");
+  document.addEventListener("pointermove", (e) => {
+    const t = e.target.closest?.("[data-tip]");
+    if (!t) { tip.style.display = "none"; return; }
+    tip.textContent = t.getAttribute("data-tip");
+    tip.style.display = "block";
+    const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+    tip.style.left = x + "px"; tip.style.top = e.clientY - 40 + "px";
+  });
+
+  $("connect").onclick = signIn;
+  $("signout").onclick = signOut;
+  $("refresh").onclick = load;
+  if (token) load();
+  if (window.ethereum?.on) window.ethereum.on("accountsChanged", () => { signOut(); msg("Wallet changed: sign in again."); });
+  (async () => {
+    if (!token || !window.ethereum) return;
+    try { const [a] = await window.ethereum.request({ method: "eth_accounts" }); if (a) $("addr").textContent = a.slice(0, 6) + "…" + a.slice(-4); } catch { /* ignore */ }
+  })();
+</script>
+</body>
+</html>

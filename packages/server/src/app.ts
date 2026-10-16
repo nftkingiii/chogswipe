@@ -24,6 +24,7 @@ import type { Chain } from "./chain.js";
 import { chogInfo, houseIds, houseLayout, isHouse } from "./chogs.js";
 import type { Signer } from "./sign.js";
 import type { RaidRecord, Store } from "./store.js";
+import { cleanEvent, summarize } from "./analytics.js";
 
 export interface AppDeps {
   chain: Chain;
@@ -37,10 +38,13 @@ export interface AppDeps {
   holderMode?: boolean;
   /** FEEDBACK_KEY: lets the team read the feedback box at GET /feedback */
   feedbackKey?: string;
+  /** wallets that may open the analytics dashboard (checked against the signed-in session) */
+  adminAddresses?: string[];
 }
 
-/** API routes that only exist for holders; the public demo needs none of them. */
-const HOLDER_ROUTES = ["/auth", "/me", "/chogs", "/hideouts", "/targets", "/raids"];
+/** API routes that only exist for holders; the public demo needs none of them. Sign-in (/auth) stays open:
+ * it grants nothing by itself, and the team signs in with it to open the analytics dashboard. */
+const HOLDER_ROUTES = ["/me", "/chogs", "/hideouts", "/targets", "/raids"];
 
 const SESSION_MS = 24 * 3600_000;
 const NONCE_MS = 10 * 60_000;
@@ -186,6 +190,44 @@ export async function buildApp(deps: AppDeps) {
     const view = await dailyView(start.day);
     const rank = view.top.find((r) => r.name.toLowerCase() === clean.toLowerCase())?.rank ?? null;
     return { ...view, result: outcome.result, ticks: outcome.ticks, stars, rank };
+  });
+
+  // ------------------------------------------------------------ analytics
+  // Anonymous play events from the game, and the team's dashboard. Only signed-in admin wallets can read it.
+
+  const eventLimit = limiter(240, 600_000, now);
+  const admins = new Set((deps.adminAddresses ?? []).map((a) => a.toLowerCase()));
+
+  app.post<{ Body: { type: string; visitor: string; data?: Record<string, unknown> } }>("/events", async (req) => {
+    eventLimit(req.ip);
+    const e = cleanEvent(req.body?.type, req.body?.visitor, req.body?.data);
+    if (!e) throw new HttpError(400, "bad event");
+    await store.putEvent({ ...e, at: now() });
+    return { ok: true };
+  });
+
+  app.get("/admin/stats", async (req) => {
+    const address = await auth(req);
+    if (!admins.has(address.toLowerCase())) throw new HttpError(403, "this wallet can't view analytics");
+    const day = utcDay(now());
+    const [events, board, feedback] = await Promise.all([
+      store.eventsSince(now() - 30 * 86_400_000, 200_000),
+      store.dailyTop(day, 1000),
+      store.listFeedback(500),
+    ]);
+    const d = dailyHeist(day);
+    return {
+      generatedAt: now(),
+      ...summarize(events, now()),
+      daily: {
+        day,
+        slug: d.location.slug,
+        name: d.location.name,
+        players: board.length,
+        top: board.slice(0, 10).map((r, i) => ({ rank: i + 1, name: r.name, ticks: r.ticks, stars: r.stars })),
+      },
+      feedback: { total: feedback.length, latest: feedback.slice(0, 25) },
+    };
   });
 
   // ------------------------------------------------------------ feedback

@@ -30,6 +30,7 @@ import { castReady, loadCast } from "./cast.js";
 import { isMuted, sfx, startMusic, stopMusic, toggleMute, unlockAudio } from "./sfx.js";
 import { finishDaily, finishRaid, type DailyTicket, type RaidStart, type SignedResult } from "./api.js";
 import { askForm } from "./dom.js";
+import { track } from "./track.js";
 import { imageUrl, refresh } from "./session.js";
 import { portraitImage } from "./portraits.js";
 import { settle } from "./tx.js";
@@ -195,6 +196,7 @@ export class RaidScene extends Phaser.Scene {
           hideout: { defender: loadoutFor(this.loc.traits), traps: this.loc.traps, plan: this.plan },
         };
     this.s = createRaid(this.setup);
+    if (this.counted()) track("heist_start", this.trackInfo());
 
     const theme = themeFor(this.loc.traits.Background, this.loc.rooms, this.loc.slug);
     bakeRooms(this, theme, this.plan);
@@ -582,6 +584,7 @@ export class RaidScene extends Phaser.Scene {
         const lore = !this.live && !this.replay;
         if (e.result === "escaped" && lore) markCleared(this.loc.slug);
         const best = lore && stars > 0 && !AUTOPILOT ? recordRun(this.loc.slug, this.s.t, stars) : false;
+        if (this.counted()) track("heist_end", { ...this.trackInfo(), result: e.result, stars, secs: Math.round((this.s.t / TICK_HZ) * 10) / 10 });
         if (e.result === "escaped") this.exitThroughDoor();
         if (this.live) {
           // the referee replays our inputs and signs the result if we escaped with loot
@@ -610,6 +613,17 @@ export class RaidScene extends Phaser.Scene {
     const root = this.puppet.root;
     this.tweens.add({ targets: root, x: root.x - 70, scaleX: root.scaleX * 0.85, scaleY: root.scaleY * 0.85, alpha: 0, duration: 650, ease: "Quad.In" });
     this.time.delayedCall(700, () => this.frontDoor.setTexture("frontdoor_0"));
+  }
+
+  /** Real players only: not replays or the autopilot demo. */
+  private counted() {
+    return !this.replay && !AUTOPILOT;
+  }
+
+  /** Which kind of heist this is, for the team's analytics; lore and daily heists name their location. */
+  private trackInfo(): Record<string, string> {
+    const mode = this.live ? "live" : this.daily ? "daily" : this.loc.slug.startsWith("test-") ? "test" : "lore";
+    return mode === "lore" || mode === "daily" ? { mode, slug: this.loc.slug } : { mode };
   }
 
   /** Daily heist: ask for a name and send the run to the leaderboard; the referee replays it. */
