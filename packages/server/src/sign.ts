@@ -30,7 +30,7 @@ export interface Signer {
 
 export function refereeSigner(key: Hex, chainId: number, vault: Address): Signer {
   const account = privateKeyToAccount(key);
-  const domain = { name: "Chogswipe", version: "1", chainId, verifyingContract: vault } as const;
+  const domain = { name: "Chogswipe", version: "2", chainId, verifyingContract: vault } as const;
   return {
     address: account.address,
     signResult: (message) => account.signTypedData({ domain, types: raidResultTypes, primaryType: "RaidResult", message }),

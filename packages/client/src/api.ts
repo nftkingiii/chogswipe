@@ -56,6 +56,8 @@ export interface RaidStart {
   /** the target hideout's floor plan id; null for lore houses */
   plan?: string | null;
   capAmount: string;
+  /** escrowed from your vault when the raid opens on-chain; back if you escape, the defender's if not */
+  ticket?: string;
 }
 
 export interface SignedResult {

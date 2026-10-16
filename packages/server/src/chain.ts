@@ -7,6 +7,7 @@ const vaultAbi = parseAbi([
   "function shieldUntil(uint256) view returns (uint64)",
   "function capBps() view returns (uint16)",
   "function minStake() view returns (uint256)",
+  "function ticketBps() view returns (uint16)",
   "function settled(bytes32) view returns (bool)",
   "function hashResult((bytes32 raidId,address raider,uint256 raiderToken,uint256 targetToken,uint256 amount,uint64 shieldSecs,uint64 deadline)) view returns (bytes32)",
 ]);
@@ -19,6 +20,8 @@ export interface VaultState {
 export interface VaultParams {
   capBps: number;
   minStake: bigint;
+  /** a raid's ticket, as a share of the most it could take (escrowed by openRaid, back on escape) */
+  ticketBps: number;
 }
 
 /** Everything the referee reads from Monad. Faked in tests. */
@@ -87,14 +90,15 @@ export function viemChain(rpcUrl: string, chog: Address, vault: Address): Chain 
     },
     vaults,
     async params() {
-      const [capBps, minStake] = await client.multicall({
+      const [capBps, minStake, ticketBps] = await client.multicall({
         contracts: [
           { address: vault, abi: vaultAbi, functionName: "capBps" },
           { address: vault, abi: vaultAbi, functionName: "minStake" },
+          { address: vault, abi: vaultAbi, functionName: "ticketBps" },
         ],
         allowFailure: false,
       });
-      return { capBps: Number(capBps), minStake: minStake as bigint };
+      return { capBps: Number(capBps), minStake: minStake as bigint, ticketBps: Number(ticketBps) };
     },
     async isSettled(raidId) {
       return client.readContract({ address: vault, abi: vaultAbi, functionName: "settled", args: [raidId] });

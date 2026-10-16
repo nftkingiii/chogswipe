@@ -69,3 +69,36 @@ export async function pending(vaultId: number): Promise<{ amount: bigint; readyA
   const [amount, readyAt] = await publicClient.readContract({ address: VAULT, abi: vaultAbi, functionName: "pendingWithdrawal", args: [BigInt(vaultId)] });
   return { amount, readyAt: Number(readyAt) };
 }
+
+/** Open a raid on-chain: the vault escrows the ticket from your Chog's stake. */
+export async function openRaid(raidId: Hex, raiderToken: number, targetToken: number): Promise<Hex> {
+  const { client, address } = await w();
+  return send(await client.writeContract({ account: address, chain: client.chain, address: VAULT, abi: vaultAbi, functionName: "openRaid", args: [raidId, BigInt(raiderToken), BigInt(targetToken)] }));
+}
+
+/** Add the vault's share of every raid's stakers' cut to its balance. */
+export async function claimRewards(vaultId: number): Promise<Hex> {
+  const { client, address } = await w();
+  return send(await client.writeContract({ account: address, chain: client.chain, address: VAULT, abi: vaultAbi, functionName: "claimRewards", args: [BigInt(vaultId)] }));
+}
+
+/** Collect the tickets of raiders who got caught (or never settled) at your hideout. */
+export async function payTickets(raidIds: Hex[]): Promise<Hex> {
+  const { client, address } = await w();
+  return send(await client.writeContract({ account: address, chain: client.chain, address: VAULT, abi: vaultAbi, functionName: "payTickets", args: [raidIds] }));
+}
+
+/** Tickets at this hideout that are due now: raids whose window has closed without an escape. */
+export async function dueTickets(raidIds: Hex[], vaultId: number): Promise<{ ids: Hex[]; total: bigint }> {
+  const now = BigInt(Math.floor(Date.now() / 1000));
+  const rows = await Promise.all(raidIds.map((id) => publicClient.readContract({ address: VAULT, abi: vaultAbi, functionName: "escrows", args: [id] })));
+  const ids: Hex[] = [];
+  let total = 0n;
+  rows.forEach(([raider, expiresAt, , target, ticket], i) => {
+    if (raider !== "0x0000000000000000000000000000000000000000" && target === BigInt(vaultId) && expiresAt < now) {
+      ids.push(raidIds[i]!);
+      total += ticket;
+    }
+  });
+  return { ids, total };
+}

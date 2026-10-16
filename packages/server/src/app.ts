@@ -357,10 +357,12 @@ export async function buildApp(deps: AppDeps) {
     const [params, vaults] = await Promise.all([chain.params(), chain.vaults([raiderToken, targetToken])]);
     const mineV = vaults.get(raiderToken)!;
     const targetV = vaults.get(targetToken)!;
-    if (mineV.balance < params.minStake) throw new HttpError(400, "stake more $CHOG in your own vault to raid");
     if (targetV.shieldUntil > now() / 1000) throw new HttpError(409, "that hideout is shielded");
     const capAmount = (targetV.balance * BigInt(params.capBps)) / 10_000n;
     if (capAmount === 0n) throw new HttpError(409, "that vault is empty");
+    // the vault escrows this from the raider's stake when the raid opens on-chain; it comes back on escape
+    const ticket = (capAmount * BigInt(params.ticketBps)) / 10_000n;
+    if (mineV.balance < params.minStake || mineV.balance < ticket) throw new HttpError(400, "stake more $CHOG in your own vault to raid");
 
     const raid: RaidRecord = {
       id: `0x${randomBytes(32).toString("hex")}` as Hex,
@@ -383,6 +385,7 @@ export async function buildApp(deps: AppDeps) {
       traps,
       plan: plan ?? null,
       capAmount: raid.capAmount,
+      ticket: ticket.toString(),
     };
   });
 

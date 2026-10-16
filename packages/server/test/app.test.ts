@@ -34,7 +34,7 @@ function fakeChain(): Chain & { owners: Map<number, Address>; balances: Map<numb
     ownedBy: async (a) => [...owners].filter(([, o]) => o === a).map(([id]) => id),
     vault: async (id) => vault(id),
     vaults: async (ids) => new Map(ids.map((id) => [id, vault(id)])),
-    params: async () => ({ capBps: 1_000, minStake: 1_000n * E18 }),
+    params: async () => ({ capBps: 1_000, minStake: 1_000n * E18, ticketBps: 1_000 }),
     isSettled: async () => false,
   };
 }
@@ -141,6 +141,7 @@ describe("referee", () => {
       await app.inject({ method: "POST", url: "/raids", headers: authed(token), payload: { raiderToken: 1, targetToken: HOUSE_BASE } })
     ).json();
     expect(start.capAmount).toBe((2_000n * E18).toString());
+    expect(start.ticket).toBe((200n * E18).toString()); // 10% of the most it could take
 
     const inputs = recordRun({ seed: start.seed, raider: start.raider, hideout: { defender: start.defender, traps: start.traps } });
     clock += 60_000; // real time passes
@@ -151,7 +152,7 @@ describe("referee", () => {
     expect(BigInt(result.amount)).toBe((2_000n * E18 * BigInt(outcome.lootBps)) / 10_000n);
 
     const signer = await recoverTypedDataAddress({
-      domain: { name: "Chogswipe", version: "1", chainId: 143, verifyingContract: VAULT },
+      domain: { name: "Chogswipe", version: "2", chainId: 143, verifyingContract: VAULT },
       types: raidResultTypes,
       primaryType: "RaidResult",
       message: {

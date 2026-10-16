@@ -7,6 +7,7 @@ import { startRaid, targets, type Target } from "./api.js";
 import { castReady, loadCast } from "./cast.js";
 import { needsWallet, nav } from "./nav.js";
 import { selectedChog } from "./session.js";
+import { openRaid } from "./tx.js";
 import { portraitImage } from "./portraits.js";
 import { FONT_BODY, FONT_TITLE, INK_N, button, notice, panel, paperBackground } from "./ui.js";
 
@@ -60,6 +61,9 @@ export class PlayersScene extends Phaser.Scene {
         const msg = notice(this, "Asking the referee to open a raid…");
         try {
           const start = await startRaid(me.id, t.id);
+          // the vault escrows the ticket on-chain before the raid begins
+          msg.setText(`Confirm the raid in your wallet. Your vault puts up a ${chog(start.ticket ?? "0")} $CHOG ticket: it comes back if you escape, the defender keeps it if you're caught.`);
+          await openRaid(start.raidId, me.id, t.id);
           this.scene.start("raid", { chog: me, live: { start, target: { id: t.id, name: t.house ? t.name : `Chog #${t.id}'s hideout`, traits: t.traits } } });
         } catch (e) {
           msg.setText(`Can't raid: ${(e as Error).message}`);

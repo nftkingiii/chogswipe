@@ -22,6 +22,12 @@ export const vaultAbi = parseAbi([
   "function requestWithdraw(uint256 vaultId, uint256 amount)",
   "function withdraw(uint256 vaultId)",
   "function settleRaid((bytes32 raidId,address raider,uint256 raiderToken,uint256 targetToken,uint256 amount,uint64 shieldSecs,uint64 deadline) r, bytes signature)",
+  "function openRaid(bytes32 raidId, uint256 raiderToken, uint256 targetToken)",
+  "function escrows(bytes32) view returns (address raider, uint64 expiresAt, uint256 raiderToken, uint256 targetToken, uint256 ticket)",
+  "function payTickets(bytes32[] raidIds) returns (uint256 paid)",
+  "function pendingRewards(uint256) view returns (uint256)",
+  "function claimRewards(uint256 vaultId) returns (uint256 amount)",
+  "function feeBps() view returns (uint16)",
 ]);
 
 export const erc20Abi = parseAbi([
