@@ -9,7 +9,7 @@ import { HOUSE_BASE } from "../src/chogs.js";
 import { refereeSigner, raidResultTypes } from "../src/sign.js";
 import { MemoryStore } from "../src/store.js";
 
-const VAULT = "0x21A1016A65416C5E63f1518cd0f5eDd4d2660445" as Address;
+const VAULT = "0xD8c3e8AB14F6153e1cFb5212541032aFfAFF9fC5" as Address;
 const ORIGIN = "http://localhost:5173";
 const player = privateKeyToAccount(generatePrivateKey());
 const other = privateKeyToAccount(generatePrivateKey());

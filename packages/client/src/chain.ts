@@ -10,7 +10,7 @@ export const monad = defineChain({
   contracts: { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } },
 });
 
-export const VAULT = (import.meta.env.VITE_VAULT_ADDRESS ?? "0x21A1016A65416C5E63f1518cd0f5eDd4d2660445") as Address;
+export const VAULT = (import.meta.env.VITE_VAULT_ADDRESS ?? "0xD8c3e8AB14F6153e1cFb5212541032aFfAFF9fC5") as Address;
 export const CHOG_TOKEN = "0x350035555E10d9AfAF1566AaebfCeD5BA6C27777" as Address;
 
 export const vaultAbi = parseAbi([

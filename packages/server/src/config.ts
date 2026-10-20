@@ -27,7 +27,7 @@ export function loadConfig(): Config {
     rpcUrl: process.env.RPC_URL ?? "https://rpc.monad.xyz",
     chainId: Number(process.env.CHAIN_ID ?? 143),
     chog: (process.env.CHOG_ADDRESS ?? "0xc96d31F8626c6D03Fae5dCD3d61e3FB9F4a73763") as Address,
-    vault: (process.env.VAULT_ADDRESS ?? "0x21A1016A65416C5E63f1518cd0f5eDd4d2660445") as Address,
+    vault: (process.env.VAULT_ADDRESS ?? "0xD8c3e8AB14F6153e1cFb5212541032aFfAFF9fC5") as Address,
     refereeKey: need("REFEREE_PRIVATE_KEY") as Hex,
     allowedOrigin: process.env.ALLOWED_ORIGIN ?? "http://localhost:5173",
     holderMode: process.env.HOLDER_MODE === "1",

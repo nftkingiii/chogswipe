@@ -3,7 +3,7 @@ import { createPublicClient, hashTypedData, http, type Address } from "viem";
 import { vaultAbi } from "../src/chain.js";
 import { raidResultTypes } from "../src/sign.js";
 
-const vault = (process.env.VAULT_ADDRESS ?? "0x21A1016A65416C5E63f1518cd0f5eDd4d2660445") as Address;
+const vault = (process.env.VAULT_ADDRESS ?? "0xD8c3e8AB14F6153e1cFb5212541032aFfAFF9fC5") as Address;
 const client = createPublicClient({ transport: http(process.env.RPC_URL ?? "https://rpc.monad.xyz") });
 const message = {
   raidId: `0x${"ab".repeat(32)}`,
