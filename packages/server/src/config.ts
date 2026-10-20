@@ -32,6 +32,6 @@ export function loadConfig(): Config {
     allowedOrigin: process.env.ALLOWED_ORIGIN ?? "http://localhost:5173",
     holderMode: process.env.HOLDER_MODE === "1",
     feedbackKey: process.env.FEEDBACK_KEY || undefined,
-    adminAddresses: (process.env.ADMIN_ADDRESSES ?? "0xEb87Db53c6307aCf931feF3F4fa7e14F23129621").split(",").map((a) => a.trim()).filter(Boolean),
+    adminAddresses: (process.env.ADMIN_ADDRESSES ?? "0xd38e50591F6c2a23CE1B34C8149CfC345Bea3190").split(",").map((a) => a.trim()).filter(Boolean),
   };
 }
