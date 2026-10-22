@@ -19,9 +19,9 @@ interface Session {
 
 /**
  * Holder mode: wallet sign-in, raids on other holders, vaults and settlement on Monad.
- * On since full launch (Oct 22, 2026); build with VITE_HOLDER_MODE=0 to go back to the public demo.
+ * Off during the public demo; build with VITE_HOLDER_MODE=1 to switch it on at full launch.
  */
-export const HOLDER_MODE = (import.meta.env.VITE_HOLDER_MODE ?? "1") === "1";
+export const HOLDER_MODE = import.meta.env.VITE_HOLDER_MODE === "1";
 
 const demoChogs = (): PlayChog[] => DEMO_ROSTER.map((c) => ({ ...c, vault: null, layout: null }));
 
