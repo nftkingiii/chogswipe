@@ -8,7 +8,7 @@ export interface Config {
   vault: Address;
   refereeKey: Hex;
   allowedOrigin: string;
-  /** HOLDER_MODE=1 opens wallet sign-in and raids; off during the public demo */
+  /** holder mode (wallet sign-in, hideouts, raids) is on since full launch; HOLDER_MODE=0 switches it back off */
   holderMode: boolean;
   feedbackKey?: string;
   /** wallets that may open the analytics dashboard */
@@ -30,7 +30,7 @@ export function loadConfig(): Config {
     vault: (process.env.VAULT_ADDRESS ?? "0xD8c3e8AB14F6153e1cFb5212541032aFfAFF9fC5") as Address,
     refereeKey: need("REFEREE_PRIVATE_KEY") as Hex,
     allowedOrigin: process.env.ALLOWED_ORIGIN ?? "http://localhost:5173",
-    holderMode: process.env.HOLDER_MODE === "1",
+    holderMode: (process.env.HOLDER_MODE ?? "1") === "1",
     feedbackKey: process.env.FEEDBACK_KEY || undefined,
     adminAddresses: (process.env.ADMIN_ADDRESSES ?? "0xd38e50591F6c2a23CE1B34C8149CfC345Bea3190").split(",").map((a) => a.trim()).filter(Boolean),
   };
