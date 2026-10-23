@@ -75,3 +75,12 @@ export function goDemo() {
 }
 
 export const loadoutOf = (c: RosterChog) => loadoutFor(c.traits);
+
+/**
+ * The trial: anyone can play the first heists with a sample Chog. Everything else (the rest of the map,
+ * posting to the daily board, your hideout, vault and raids) needs your own Chog.
+ */
+export const TRIAL_HEISTS = 2;
+export const onTrial = (): boolean => session.mode !== "live";
+export const trialLocked = (heistIndex: number): boolean => onTrial() && heistIndex >= TRIAL_HEISTS;
+export const OWN_CHOG_UNLOCKS = "Your own Chog unlocks all 7 heists, the daily board, your hideout, vault and raids.";

@@ -31,7 +31,7 @@ import { isMuted, sfx, startMusic, stopMusic, toggleMute, unlockAudio } from "./
 import { finishDaily, finishRaid, type DailyTicket, type RaidStart, type SignedResult } from "./api.js";
 import { askForm } from "./dom.js";
 import { track } from "./track.js";
-import { imageUrl, refresh } from "./session.js";
+import { imageUrl, refresh, onTrial } from "./session.js";
 import { portraitImage } from "./portraits.js";
 import { settle } from "./tx.js";
 import { formatUnits } from "viem";
@@ -314,7 +314,7 @@ export class RaidScene extends Phaser.Scene {
     );
     fixed(
       this.add
-        .text(W / 2, 30, this.replay ? "REPLAY" : this.live ? "LIVE RAID · MONAD" : AUTOPILOT ? "DEMO · AUTOPILOT" : "DEMO RAID", {
+        .text(W / 2, 30, this.replay ? "REPLAY" : this.live ? "LIVE RAID · MONAD" : AUTOPILOT ? "SAMPLE CHOG · AUTOPILOT" : "TRIAL RAID · SAMPLE CHOG", {
           fontFamily: FONT_BODY,
           fontSize: "16px",
           color: INK,
@@ -630,6 +630,7 @@ export class RaidScene extends Phaser.Scene {
   private async postDaily(result: string, stars: number) {
     const daily = this.daily!;
     if (stars === 0) return this.resultCard(result, stars, "Escape with the loot to get a time on today's board.");
+    if (onTrial()) return this.resultCard(result, stars, "Nice run! Posting your time to today's board needs your own Chog.");
     let saved = "";
     try {
       saved = localStorage.getItem("chogswipe.name") ?? "";

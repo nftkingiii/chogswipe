@@ -53,7 +53,7 @@ export class LoadoutScene extends Phaser.Scene {
     const W = DESIGN_W;
 
     nav(this, "loadout");
-    this.add.text(42, 100, session.mode === "live" ? "Your Chogs. Their traits become their gadgets." : "Pick a Chog. Its traits become its gadgets.", {
+    this.add.text(42, 100, session.mode === "live" ? "Your Chogs. Their traits become their gadgets." : "Try a sample Chog. Its traits become its gadgets.", {
       fontFamily: FONT_BODY,
       fontSize: "24px",
       color: "#5a4d50",

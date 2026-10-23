@@ -8,7 +8,7 @@ const SEEN = "chogswipe.guideSeen";
 
 const STEPS: [title: string, body: string][] = [
   ["Pick a Chog", "Its NFT traits are its gadgets: eyes scout for traps, the head gives a perk, the body sets your speed, the accessory is a one-shot special."],
-  ["Choose a heist", "Seven monanimal hideouts, each with its own rooms and traps. Clear one to unlock the next. The Fwog Pond is the easiest."],
+  ["Choose a heist", "Seven monanimal hideouts, each with its own rooms and traps. Sample Chogs can try the first two; your own Chog unlocks all seven. The Fwog Pond is the easiest."],
   ["Reach the vault", "Every hideout is laid out differently: read the heist card. ↑ takes stairs, launch pads and portals (↓ comes back down). Locked door? Hold F."],
   ["Mind the traps", "Traps are hidden until you scout: press Q. Jump them with SPACE. Hit too many and you're knocked out."],
   ["Dodge the guard", "If it sees you in front, it shouts \"!\" and chases you. Jump over it, sneak up behind it, or outrun it. Caught = raid over."],

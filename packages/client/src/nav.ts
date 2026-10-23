@@ -27,7 +27,7 @@ export function nav(scene: Phaser.Scene, active: string) {
     onClick: async () => {
       if (!HOLDER_MODE) {
         // public demo: the button is there, faint, until holder mode launches
-        const msg = notice(scene, "Wallets open at full launch, for Chog holders.\nUntil then the demo is open to everyone: play, and tell us what you think!");
+        const msg = notice(scene, "Wallets open for Chog holders at full launch.\nUntil then, try the first heists with a sample Chog, and tell us what you think!");
         scene.time.delayedCall(3500, () => msg.destroy());
         return;
       }
@@ -49,7 +49,7 @@ export function nav(scene: Phaser.Scene, active: string) {
   let left = DESIGN_W - 40;
   if (!live) {
     const banner = scene.add
-      .text(left, 76, HOLDER_MODE ? "DEMO · connect a wallet holding a Chog to play for real" : "PUBLIC DEMO · holder mode launches soon", {
+      .text(left, 76, HOLDER_MODE ? "TRIAL · SAMPLE CHOG · connect a wallet holding a Chog to unlock everything" : "TRIAL · SAMPLE CHOG · Chog holders unlock everything at launch", {
         fontFamily: "'Patrick Hand', sans-serif",
         fontSize: "16px",
         color: "#1c1618",
@@ -76,7 +76,7 @@ export function needsWallet(scene: Phaser.Scene, what: string): boolean {
     scene,
     HOLDER_MODE
       ? `${what}\n\nConnect a wallet that holds a Chog (top right) to use this tab.`
-      : `${what}\n\nThis opens to Chog holders at full launch. For now, try the heists: the demo is open to everyone.`,
+      : `${what}\n\nThis needs your own Chog, and opens to holders at full launch. For now, try the first heists with a sample Chog.`,
   );
   return true;
 }

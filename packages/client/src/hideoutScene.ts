@@ -111,7 +111,7 @@ export class HideoutScene extends Phaser.Scene {
 
     this.status = this.add.text(800, 552, "", { fontFamily: FONT_BODY, fontSize: "20px", color: INK, wordWrap: { width: 440 } });
     button(this, 900, 660, 200, "Test it", () => this.test(), false);
-    button(this, 1130, 660, 200, session.mode === "live" ? "Save" : "Save (demo)", () => this.save());
+    button(this, 1130, 660, 200, session.mode === "live" ? "Save" : "Save (trial)", () => this.save());
     this.redraw();
   }
 
@@ -187,7 +187,7 @@ export class HideoutScene extends Phaser.Scene {
     if (session.mode !== "live") {
       chog.layout = [...this.traps];
       chog.plan = this.planId;
-      this.status.setText("Saved for this demo session. Connect a wallet to save it for real.");
+      this.status.setText("Saved for this trial only. A hideout that raiders really hit needs your own Chog.");
       return;
     }
     this.status.setText("Saving…");

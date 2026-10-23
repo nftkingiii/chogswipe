@@ -5,7 +5,7 @@ import { bake, grain, ink, INK, PAPER } from "./art.js";
 import { bests, clock, cleared, starText } from "./progress.js";
 import { getDaily, startDaily, type DailyView } from "./api.js";
 import type { RosterChog } from "./roster.js";
-import { selectedChog } from "./session.js";
+import { OWN_CHOG_UNLOCKS, TRIAL_HEISTS, onTrial, selectedChog, trialLocked } from "./session.js";
 import { nav } from "./nav.js";
 import { themeFor } from "./theme.js";
 import { castReady, loadCast } from "./cast.js";
@@ -83,17 +83,24 @@ export class MapScene extends Phaser.Scene {
 
     nav(this, "map");
     this.add.text(40, 96, "THE MONADVERSE HEISTS", { fontFamily: FONT_TITLE, fontSize: "34px", color: INK });
-    this.add.text(42, 136, `Raiding as Chog #${this.chog.id}. Clear a heist to unlock the next.`, { fontFamily: FONT_BODY, fontSize: "22px", color: "#3b3033" });
+    this.add.text(
+      42,
+      136,
+      onTrial() ? `Trying sample Chog #${this.chog.id}: the first ${TRIAL_HEISTS} heists are open. Your own Chog unlocks all 7.` : `Raiding as Chog #${this.chog.id}. Clear a heist to unlock the next.`,
+      { fontFamily: FONT_BODY, fontSize: "22px", color: "#3b3033" },
+    );
 
     const done = cleared();
-    const unlocked = (l: Location) => !l.unlockAfter || done.has(l.unlockAfter);
+    // on the trial, heists past the first few belong to Chog holders, whatever was cleared before
+    const unlocked = (l: Location) => !trialLocked(LOCATIONS.indexOf(l)) && (!l.unlockAfter || done.has(l.unlockAfter));
     let next = LOCATIONS.findIndex((l) => unlocked(l) && !done.has(l.slug));
-    if (next < 0) next = LOCATIONS.length - 1;
+    if (next < 0) next = onTrial() ? TRIAL_HEISTS - 1 : LOCATIONS.length - 1;
 
     LOCATIONS.forEach((loc, i) => {
       const [x, y] = NODES[i]!;
       const open = unlocked(loc);
-      const won = done.has(loc.slug);
+      const won = done.has(loc.slug) && open;
+      const holdersOnly = trialLocked(i);
       const color = Number.parseInt(themeFor(loc.traits.Background).accent.slice(1), 16);
       const g = this.add.graphics();
       g.fillStyle(INK_N, 1).fillCircle(x + 4, y + 6, 38);
@@ -109,8 +116,10 @@ export class MapScene extends Phaser.Scene {
         const ring = this.add.circle(x, y, 46).setStrokeStyle(5, ACCENT_N);
         this.tweens.add({ targets: ring, scale: 1.25, alpha: 0, duration: 1100, repeat: -1 });
       }
-      const hit = this.add.zone(x, y, 90, 90).setInteractive({ useHandCursor: open });
-      hit.on("pointerdown", () => open && this.showCard(loc, i));
+      if (holdersOnly) this.add.text(x, y - 52, "CHOG HOLDERS", { fontFamily: FONT_TITLE, fontSize: "13px", color: PAPER, backgroundColor: "#1c1618", padding: { x: 6, y: 2 } }).setOrigin(0.5);
+      // holder-only heists still open their card, so a trial player can see what their own Chog unlocks
+      const hit = this.add.zone(x, y, 90, 90).setInteractive({ useHandCursor: open || holdersOnly });
+      hit.on("pointerdown", () => (open || holdersOnly) && this.showCard(loc, i));
     });
 
     this.guide();
@@ -151,7 +160,14 @@ export class MapScene extends Phaser.Scene {
         lineSpacing: 1,
       }),
     );
-    keep(button(this, x + w / 2, y + h - 46, w - 40, "Start heist", () => startHeist(this, { chog: this.chog, location: loc })));
+    if (trialLocked(i)) {
+      keep(
+        button(this, x + w / 2, y + h - 46, w - 40, "Chog holders only", () => {
+          const msg = notice(this, `${loc.name} is for Chog holders.\n${OWN_CHOG_UNLOCKS}`);
+          this.time.delayedCall(3500, () => msg.destroy());
+        }, false),
+      );
+    } else keep(button(this, x + w / 2, y + h - 46, w - 40, "Start heist", () => startHeist(this, { chog: this.chog, location: loc })));
   }
 
   /** Today's daily heist: same heist and seed for everyone, ranked by time on the server. */
@@ -177,7 +193,11 @@ export class MapScene extends Phaser.Scene {
         view = v;
         const loc = LOCATIONS.find((l) => l.slug === v.slug);
         const top = v.top[0];
-        line.setText(`${loc?.name ?? v.slug} · ${top ? `best ${clock(top.ticks)} by ${top.name}` : "no times yet: be first!"}`);
+        line.setText(
+          onTrial()
+            ? `${loc?.name ?? v.slug} · holders post times`
+            : `${loc?.name ?? v.slug} · ${top ? `best ${clock(top.ticks)} by ${top.name}` : "no times yet: be first!"}`,
+        );
       })
       .catch(() => this.scene.isActive() && line.setText("The board is offline right now."));
   }
